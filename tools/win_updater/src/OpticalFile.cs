@@ -78,7 +78,7 @@ namespace EA9Updater
             return Math.Min(Math.Max(code, 0), Inf);
         }
 
-        public static byte[] Build(int focalMm, int xpdMm)
+        public static byte[] Build(int focalMm, double xpdMm)
         {
             if (focalMm <= 0 || xpdMm <= 0) throw new ArgumentOutOfRangeException();
             var t0Near = Fill((int)Math.Round((xpdMm + TravelUm / 1000.0) * 15));
