@@ -5,11 +5,13 @@ import os
 import re
 import sys
 import hid
-from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QComboBox, QDoubleSpinBox, QGridLayout,
-    QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QRadioButton, QTextEdit, QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QComboBox, QDialog, QDialogButtonBox,
+    QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QProgressBar, QPushButton, QRadioButton,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 if getattr(sys, "frozen", False):
@@ -17,6 +19,7 @@ if getattr(sys, "frozen", False):
     EA9_BIN = os.path.join(BASE_DIR, "firmware", "ea9.bin")
     FW_CS = os.path.join(BASE_DIR, "win_src", "Firmware.cs")
     WIN_DOCS_DIR = os.path.join(BASE_DIR, "win_docs")
+    HW_IMG = os.path.join(BASE_DIR, "win_assets", "hw_version.jpg")
 else:
     REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     sys.path.insert(0, os.path.join(REPO_DIR, "tools"))
@@ -24,6 +27,7 @@ else:
     EA9_BIN = os.path.join(REPO_DIR, "tools", "win_updater", "firmware", "ea9.bin")
     FW_CS = os.path.join(REPO_DIR, "tools", "win_updater", "src", "Firmware.cs")
     WIN_DOCS_DIR = os.path.join(REPO_DIR, "tools", "win_updater")
+    HW_IMG = os.path.join(REPO_DIR, "tools", "win_updater", "assets", "hw_version.jpg")
 
 import cfgblock     # noqa: E402
 import gen_optical  # noqa: E402
@@ -60,6 +64,41 @@ def load_changelog(zh):
             return f.read()
     except OSError as e:
         return f"(无法读取更新说明 / Release notes unavailable: {e})"
+
+
+class HelpDialog(QDialog):
+    def __init__(self, parent, title, ok_text, sections, image_path=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(460)
+        v = QVBoxLayout(self)
+        v.setSpacing(10)
+
+        if image_path:
+            pix = QPixmap(image_path)
+            if not pix.isNull():
+                if pix.width() > 540:
+                    pix = pix.scaledToWidth(540, Qt.SmoothTransformation)
+                img_lbl = QLabel()
+                img_lbl.setPixmap(pix)
+                img_lbl.setAlignment(Qt.AlignCenter)
+                v.addWidget(img_lbl)
+            else:
+                v.addWidget(QLabel(f"(picture unavailable: {image_path})"))
+
+        for heading, body in sections:
+            if heading:
+                hl = QLabel(f"<b>{heading}</b>")
+                v.addWidget(hl)
+            bl = QLabel(body)
+            bl.setWordWrap(True)
+            bl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            v.addWidget(bl)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok)
+        btns.button(QDialogButtonBox.Ok).setText(ok_text)
+        btns.accepted.connect(self.accept)
+        v.addWidget(btns)
 
 
 class HidBootloader:
@@ -160,7 +199,7 @@ class MainWindow(QMainWindow):
         self.worker = None
         self.boot_ver = None
 
-        self.resize(820, 740)
+        self.resize(820, 760)
         root = QWidget()
         self.setCentralWidget(root)
         lay = QVBoxLayout(root)
@@ -183,17 +222,20 @@ class MainWindow(QMainWindow):
         self.notes_box.setMinimumHeight(140)
         lay.addWidget(self.notes_box, 1)
 
-        # 硬件版本
+        # 硬件版本 + 帮助链接
         hw_row = QHBoxLayout()
         self.hw_lbl = QLabel()
         self.hw_combo = QComboBox()
         self.hw_combo.addItems(["2", "1"])
+        self.hw_help = self._make_help_link(self.show_hw_help)
         hw_row.addWidget(self.hw_lbl)
         hw_row.addWidget(self.hw_combo)
+        hw_row.addSpacing(8)
+        hw_row.addWidget(self.hw_help)
         hw_row.addStretch()
         lay.addLayout(hw_row)
 
-        # 模式选择
+        # 模式选择 + 帮助链接
         mode_row = QHBoxLayout()
         self.mode_lbl = QLabel()
         self.multi_radio = QRadioButton()
@@ -203,9 +245,12 @@ class MainWindow(QMainWindow):
         bg.addButton(self.multi_radio)
         bg.addButton(self.single_radio)
         self.multi_radio.toggled.connect(self.update_mode)
+        self.focal_help = self._make_help_link(self.show_focal_help)
         mode_row.addWidget(self.mode_lbl)
         mode_row.addWidget(self.multi_radio)
         mode_row.addWidget(self.single_radio)
+        mode_row.addSpacing(8)
+        mode_row.addWidget(self.focal_help)
         mode_row.addStretch()
         lay.addLayout(mode_row)
 
@@ -218,13 +263,22 @@ class MainWindow(QMainWindow):
         self.single_focal = QLineEdit("50")
         self.single_focal.setMaxLength(4)
         self.single_xpd = self._make_xpd_spin(45.0)
+        self.single_xpd_help = self._make_help_link(self.show_xpd_help)
         self.single_name = QLineEdit(DEFAULT_NAME)
         self.single_name.setMaxLength(63)
         self.single_focal.textChanged.connect(lambda txt: self._auto_xpd(txt, self.single_xpd))
+
+        xpd_row = QHBoxLayout()
+        xpd_row.setContentsMargins(0, 0, 0, 0)
+        xpd_row.addWidget(self.single_xpd)
+        xpd_row.addSpacing(8)
+        xpd_row.addWidget(self.single_xpd_help)
+        xpd_row.addStretch()
+
         sg.addWidget(self.s_focal_lbl, 0, 0)
         sg.addWidget(self.single_focal, 0, 1)
         sg.addWidget(self.s_xpd_lbl, 1, 0)
-        sg.addWidget(self.single_xpd, 1, 1)
+        sg.addLayout(xpd_row, 1, 1)
         sg.addWidget(self.s_name_lbl, 2, 0)
         sg.addWidget(self.single_name, 2, 1)
         lay.addWidget(self.single_box)
@@ -258,6 +312,13 @@ class MainWindow(QMainWindow):
             mg.addWidget(x, i + 1, 3)
         mg.setColumnStretch(2, 1)
         lay.addWidget(self.multi_box)
+
+        # 多镜头模式右下角：如何选择出瞳距离？
+        slot_help_row = QHBoxLayout()
+        slot_help_row.addStretch()
+        self.slot_xpd_help = self._make_help_link(self.show_xpd_help)
+        slot_help_row.addWidget(self.slot_xpd_help)
+        lay.addLayout(slot_help_row)
 
         # 设备与进度条
         self.device_lbl = QLabel()
@@ -294,6 +355,91 @@ class MainWindow(QMainWindow):
     def _t(self, en, zh):
         return zh if self.zh else en
 
+    @staticmethod
+    def _make_help_link(handler):
+        lbl = QLabel()
+        lbl.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        lbl.setOpenExternalLinks(False)
+        lbl.setCursor(Qt.PointingHandCursor)
+        lbl.linkActivated.connect(lambda _href: handler())
+        return lbl
+
+    def show_hw_help(self):
+        dlg = HelpDialog(
+            self,
+            self._t("Adapter Version", "转接环版本"),
+            self._t("OK", "确定"),
+            [
+                (self._t("What is the difference", "有什么区别"),
+                 self._t(
+                     "Version 1 has less room past infinity than version 2. To focus at infinity, "
+                     "version 1 has to retract all the way to its end stop. On version 2 the firmware "
+                     "does not need to, which is easier on the mechanism and gives it a longer life.",
+                     "版本 1 在无穷远之外的余量比版本 2 小。为了对焦到无穷远，版本 1 必须一直退到机械限位；"
+                     "版本 2 的固件则不需要这样做，对机构的磨损更小，寿命也更长。"
+                 )),
+                (self._t("How to choose", "如何选择"),
+                 self._t(
+                     "Only if your adapter is version 1 hardware (see the picture) "
+                     "and it cannot focus at infinity, try version 1.",
+                     "只有当你的转接环是版本 1 的硬件（见上图），并且无法对焦到无穷远时，才尝试选择版本 1。"
+                 )),
+            ],
+            image_path=HW_IMG,
+        )
+        dlg.exec()
+
+    def show_focal_help(self):
+        dlg = HelpDialog(
+            self,
+            self._t("Focal Length", "焦距"),
+            self._t("OK", "确定"),
+            [
+                (self._t("Single Lens", "单镜头"),
+                 self._t(
+                     "Choose this if you only use one lens. The aperture is then fixed while you "
+                     "shoot, so it cannot be changed by mistake.",
+                     "如果你只使用一支镜头，请选择这一项。拍摄时光圈固定不变，不会被误操作改动。"
+                 )),
+                (self._t("Multiple Lenses", "多镜头"),
+                 self._t(
+                     "Enter each lens's details in the row of the aperture you want to use for it. "
+                     "To change lenses, set the camera to that aperture and press the shutter: the "
+                     "adapter will restart and switch to that lens's details. Remember to set the "
+                     "aperture back to its widest value before you shoot again.",
+                     "把每支镜头的信息填在你想用来选择它的那个光圈所在的行。换镜头时，把相机设为对应的光圈"
+                     "并按下快门：转接环会重启，并切换到这支镜头的信息。再次拍摄前，记得把光圈调回最大。"
+                 )),
+            ],
+        )
+        dlg.exec()
+
+    def show_xpd_help(self):
+        dlg = HelpDialog(
+            self,
+            self._t("Exit Pupil", "出瞳距离"),
+            self._t("OK", "确定"),
+            [
+                ("",
+                 self._t(
+                     "The exit pupil distance affects how accurately phase-detect autofocus works. "
+                     "Usually the exact optical data of a lens is not known; then follow these rules:\n\n"
+                     "1. Start with a value close to the focal length (one is selected for you when you "
+                     "enter the focal length).\n\n"
+                     "2. If you are not happy with how the camera focuses toward the edges of the frame, "
+                     "try a smaller or a larger value.\n\n"
+                     "3. Rangefinder lenses usually have a shorter exit pupil distance than SLR lenses, and "
+                     "lenses with better image quality usually have a longer one.",
+                     "出瞳距离会影响相位对焦的准确性。多数情况下你无法得知镜头精确的光学参数，"
+                     "可以按以下原则选择：\n\n"
+                     "1. 先选一个与焦距相近的数值（输入焦距后会自动选好）。\n\n"
+                     "2. 如果对相机在画面边缘的对焦效果不满意，尝试减小或增大这个数值。\n\n"
+                     "3. 通常旁轴镜头的出瞳距离比单反镜头短；画质更好的镜头，出瞳距离通常更长。"
+                 )),
+            ],
+        )
+        dlg.exec()
+
     def on_lang_changed(self, idx):
         self.zh = (idx == 0)
         self.apply_text()
@@ -309,6 +455,12 @@ class MainWindow(QMainWindow):
         self.notes_lbl.setText(self._t("Release notes", "更新说明"))
         self.notes_box.setPlainText(load_changelog(self.zh))
         self.hw_lbl.setText(self._t("Adapter version:", "转接环版本："))
+        how = self._t("How to choose?", "如何选择？")
+        self.hw_help.setText(f'<a href="#">{how}</a>')
+        self.focal_help.setText(f'<a href="#">{how}</a>')
+        self.single_xpd_help.setText(f'<a href="#">{how}</a>')
+        how_xpd = self._t("How to choose the exit pupil?", "如何选择出瞳距离？")
+        self.slot_xpd_help.setText(f'<a href="#">{how_xpd}</a>')
         self.mode_lbl.setText(self._t("Focal length:", "焦距模式："))
         self.multi_radio.setText(self._t("Multiple Lenses (switch by aperture)", "多镜头（用光圈切换）"))
         self.single_radio.setText(self._t("Single Lens (fixed aperture)", "单镜头（固定光圈）"))
@@ -375,6 +527,7 @@ class MainWindow(QMainWindow):
         single = self.single_radio.isChecked()
         self.single_box.setVisible(single)
         self.multi_box.setVisible(not single)
+        self.slot_xpd_help.setVisible(not single)
 
     def poll_usb(self):
         if self.busy or self.base_image is None:
