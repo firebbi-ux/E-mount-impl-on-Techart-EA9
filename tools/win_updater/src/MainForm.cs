@@ -6,8 +6,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -346,28 +346,32 @@ namespace EA9Updater
             return b;
         }
 
-       // The exit pupil drop-down: OpticalFile.XpdChoices, in mm.
-        ComboBox XpdBox()
+       // Exit pupil input: 0.5 mm step, free manual input (1.0 ~ 1000.0 mm).
+        NumericUpDown XpdBox()
         {
-            var b = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList,
-                                   Anchor = AnchorStyles.Left };
-            foreach (int v in OpticalFile.XpdChoices) {
-                b.Items.Add(v.ToString());
-            }
-            b.Width = TextRenderer.MeasureText("000", Font).Width
+            var b = new NumericUpDown {
+                Minimum = (decimal)LensConfig.XpdMinMm,
+                Maximum = (decimal)LensConfig.XpdMaxMm,
+                Increment = 0.5m,
+                DecimalPlaces = 1,
+                ThousandsSeparator = false,
+                Anchor = AnchorStyles.Left,
+            };
+            b.Width = TextRenderer.MeasureText("0000.0", Font).Width
                       + SystemInformation.VerticalScrollBarWidth + 24;
             return b;
         }
 
         // Selects the exit pupil OpticalFile.AutoXpd gives for `focalMm`.
-        static void SelectXpd(ComboBox b, int focalMm)
+        static void SelectXpd(NumericUpDown b, int focalMm)
         {
-            b.SelectedItem = OpticalFile.AutoXpd(focalMm).ToString();
+            decimal v = OpticalFile.AutoXpd(focalMm);
+            b.Value = Math.Min(Math.Max(v, b.Minimum), b.Maximum);
         }
 
         // On every change of a focal length, preselect its exit pupil; the
-        // user may then pick another, until the focal length changes again.
-        static void AutoXpd(TextBox focal, ComboBox xpd)
+        // user may then enter another, until the focal length changes again.
+        static void AutoXpd(TextBox focal, NumericUpDown xpd)
         {
             int mm = FocalValue(focal);
             if (mm > 0) {
@@ -375,10 +379,11 @@ namespace EA9Updater
             }
         }
 
-        static int XpdValue(ComboBox b)
+        static double XpdValue(NumericUpDown b)
         {
-            int v;
-            return b.SelectedItem != null && int.TryParse((string)b.SelectedItem, out v) ? v : 0;
+            double v;
+            string s = b.Text.Trim().Replace(',', '.');
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : 0;
         }
 
         static int FocalValue(TextBox b)
