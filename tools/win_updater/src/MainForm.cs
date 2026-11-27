@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -30,7 +31,7 @@ namespace EA9Updater
         readonly Label singleFocalLabel;
         readonly TextBox singleFocal;
         readonly Label singleXpdLabel;
-        readonly ComboBox singleXpd;
+        readonly NumericUpDown singleXpd;
         readonly LinkLabel singleXpdHelp;
         readonly LinkLabel slotXpdHelp;
         readonly Label singleNameLabel;
@@ -38,7 +39,7 @@ namespace EA9Updater
         readonly TableLayoutPanel slotGrid;
         readonly TextBox[] slotFocal = new TextBox[LensConfig.SlotCount];
         readonly TextBox[] slotName = new TextBox[LensConfig.SlotCount];
-        readonly ComboBox[] slotXpd = new ComboBox[LensConfig.SlotCount];
+        readonly NumericUpDown[] slotXpd = new NumericUpDown[LensConfig.SlotCount];
         readonly Button writeButton;
         readonly ProgressBar bar;
         readonly Label status;
@@ -345,7 +346,7 @@ namespace EA9Updater
             return b;
         }
 
-        // The exit pupil drop-down: OpticalFile.XpdChoices, in mm.
+       // The exit pupil drop-down: OpticalFile.XpdChoices, in mm.
         ComboBox XpdBox()
         {
             var b = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList,
