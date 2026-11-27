@@ -422,19 +422,31 @@ class MainWindow(QMainWindow):
             [
                 ("",
                  self._t(
-                     "The exit pupil distance affects how accurately phase-detect autofocus works. "
-                     "Usually the exact optical data of a lens is not known; then follow these rules:\n\n"
-                     "1. Start with a value close to the focal length (one is selected for you when you "
-                     "enter the focal length).\n\n"
-                     "2. If you are not happy with how the camera focuses toward the edges of the frame, "
-                     "try a smaller or a larger value.\n\n"
-                     "3. Rangefinder lenses usually have a shorter exit pupil distance than SLR lenses, and "
-                     "lenses with better image quality usually have a longer one.",
-                     "出瞳距离会影响相位对焦的准确性。多数情况下你无法得知镜头精确的光学参数，"
-                     "可以按以下原则选择：\n\n"
-                     "1. 先选一个与焦距相近的数值（输入焦距后会自动选好）。\n\n"
-                     "2. 如果对相机在画面边缘的对焦效果不满意，尝试减小或增大这个数值。\n\n"
-                     "3. 通常旁轴镜头的出瞳距离比单反镜头短；画质更好的镜头，出瞳距离通常更长。"
+                     "Exit pupil distance is the axial distance from the camera sensor plane to the lens's exit pupil "
+                     "(the virtual image of the aperture stop viewed from the rear). It governs the chief ray angle at "
+                     "the edges of the sensor and is used to compensate off-axis PDAF bias.\n\n"
+                     "1. Exit pupil distance should not be assumed equal to focal length; in fact, in most cases it is not. "
+                     "The initial default preselected by this software is for reference only; please refer to the typical "
+                     "patterns of different optical designs below for testing and step-by-step adjustment:\n"
+                     "- Rangefinder lenses (e.g. M-mount): compact, typically shorter exit pupil (wide angles often 30-45 mm).\n"
+                     "- SLR wide/standard lenses (e.g. MD/M42): retrofocus/double-Gauss designs push the exit pupil farther "
+                     "from the sensor (often 55-80 mm, longer than focal length).\n"
+                     "- Telephoto lenses (85 mm+): telephoto designs often have an exit pupil shorter than their focal length "
+                     "(typically 60-95 mm).\n\n"
+                     "2. Calibration tip (AF-C mode): Focus on a high-contrast target near the left/right edges of the "
+                     "phase-detect area. If the centre is sharp while the edges show consistent front/back focus, adjust "
+                     "the value in 1-2 mm steps (and fine-tune in 0.5 mm steps) to compensate for lens optics, adapter "
+                     "vignetting and the sensor filter stack.",
+                     "出瞳距离是指在无限远对焦状态下，镜头“出瞳（从镜头后方看进去的光圈虚像）”到相机传感器焦平面之间的距离。"
+                     "它决定了斜射光线进入传感器边缘的角度，直接影响画面左右两侧相位对焦（PDAF）的准确性。\n\n"
+                     "1. 不可一概而论等于焦距，事实上大多数时候出瞳距离并不等效于焦距，本软件给出的原始出瞳值仅供参考，"
+                     "请参照以下不同光学结构镜头的典型规律进行测试以及步进式调整：\n"
+                     "• 旁轴镜头（如原生 M 口）：结构紧凑无反光镜箱，广角/标头出瞳距离通常较短（如 35mm 旁轴常在 32～42 mm）。\n"
+                     "• 单反广角与标头（如 MD/M42）：反望远或双高斯结构会把出瞳推远，实际出瞳往往明显大于焦距（常见 55～80 mm）。\n"
+                     "• 中长焦摄远镜头（85mm 及以上）：出瞳距离反而经常小于其焦距（多在 60～95 mm 区间）。\n\n"
+                     "2. 实拍校准建议：\n"
+                     "无镜片机械转接环本身不改变无限远基准出瞳，但转接环内壁与 EA9 内部通道可能对大光圈边缘光束造成轻微裁切。"
+                     "若 AF-C 模式下画面正中心准焦而左右边缘偏焦，建议以 1～2 mm 为步进向大或向小测试，锁定方向后再用 0.5 mm 步进收口微调。"
                  )),
             ],
         )
