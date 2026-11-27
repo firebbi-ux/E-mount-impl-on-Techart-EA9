@@ -1,3 +1,13 @@
+Exit Pupil Distance Fine-Adjustment Version v2.4.0-XPD0.5 (2026-11-27)
+- This version is compiled based on the source code of "Wei-sir" Firmware 2.4.0 (the core firmware remains the original v2.4.0 by Wei-sir). It is designed to facilitate precise adjustment of the exit pupil distance when using various lenses.
+- The preset range for the exit pupil distance (25–70 mm) has been removed, now allowing for free adjustment between 1.0 mm and 1000.0 mm.
+- The adjustment increment for the exit pupil distance is set to 0.5 mm; keyboard input with one decimal place (e.g., 76.5 mm) is supported.
+- Please note that even with the more precise exit pupil distance settings provided by this version, focus inaccuracies (front/back focusing) may still occur in AF-S mode. This is due to an inherent speed discrepancy between the motor drive rate of the Techart EA9 adapter and the phase-detection autofocus speed of Sony camera bodies. Therefore, AF-C mode remains the recommended autofocus mode when using the Techart EA9 adapter.
+
+Modified by: Firebbi-ux
+
+==== Original release notes follow below====
+
 Firmware 2.4 (22 November 2026)
 
 - Fixed aperture stuck at minimum in multi-lens mode.
