@@ -9,6 +9,7 @@ on:
       - 'tools/win_updater/cfgblock.py'
       - 'tools/win_updater/firmware/ea9.bin'
       - 'tools/win_updater/changelog*.txt'
+      - 'tools/win_updater/assets/**'
 
 jobs:
   build-mac:
@@ -44,6 +45,7 @@ jobs:
             --add-data "tools/win_updater/src/Firmware.cs:win_src" \
             --add-data "tools/win_updater/changelog.txt:win_docs" \
             --add-data "tools/win_updater/changelog.zh.txt:win_docs" \
+            --add-data "tools/win_updater/assets/hw_version.jpg:win_assets" \
             tools/mac_updater/ea9_mac_updater.py
           mkdir -p out_dmg
           hdiutil create -volname "EA9Updater-v2.4.0-XPD0.5" \
