@@ -22,7 +22,7 @@ namespace EA9Updater
     {
         public int FocalMm;     // 0 = unset
         public string Name;     // "" when unset
-        public int XpdMm;       // exit pupil, mm; 0 when unset
+        public double XpdMm;    // exit pupil, mm; 0 when unset
     }
 
     sealed class LensConfig
@@ -37,6 +37,8 @@ namespace EA9Updater
 
         public const int FocalMinMm = 8;
         public const int FocalMaxMm = 600;
+        public const double XpdMinMm = 1.0;
+        public const double XpdMaxMm = 1000.0;
         public const string DefaultName = "Community EA9 Adapter";
         public const int DefaultSingleFocalMm = 50;
         public static readonly int[] HwVersions = { 2, 1 };          // the first is the default
@@ -56,12 +58,12 @@ namespace EA9Updater
 
         // What one row of the form holds: the focal text as typed, the name,
         // and the exit pupil chosen (mm, one of OpticalFile.XpdChoices).
-        public struct Entry
+       public struct Entry
         {
-            public string Focal;
-            public string Name;
-            public int Xpd;
-            public Entry(string focal, string name, int xpd) { Focal = focal; Name = name; Xpd = xpd; }
+         public string Focal;
+         public string Name;
+         public double Xpd;
+         public Entry(string focal, string name, double xpd) { Focal = focal; Name = name; Xpd = xpd; }
         }
 
         // Builds the block from the form, or returns null and says why.
@@ -111,9 +113,10 @@ namespace EA9Updater
                 if (error != null) {
                     return null;
                 }
-                if (Array.IndexOf(OpticalFile.XpdChoices, entries[i].Xpd) < 0) {
-                    error = string.Format(S.ChooseXpd, where);
-                    return null;
+                if (double.IsNaN(entries[i].Xpd) || double.IsInfinity(entries[i].Xpd)
+                 || entries[i].Xpd < XpdMinMm || entries[i].Xpd > XpdMaxMm) {
+                 error = string.Format(S.ChooseXpd, where);
+                 return null;
                 }
                 slots[i].FocalMm = mm;
                 slots[i].Name = name;
