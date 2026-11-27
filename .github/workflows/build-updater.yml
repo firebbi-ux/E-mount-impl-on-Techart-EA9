@@ -1,0 +1,29 @@
+name: Build EA9Updater EXE
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/win_updater/**'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build EA9Updater.exe
+        working-directory: tools/win_updater
+        run: dotnet build EA9Updater.csproj -c Release -o out
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EA9Updater-0.5mm-mod
+          path: tools/win_updater/out/EA9Updater.exe
