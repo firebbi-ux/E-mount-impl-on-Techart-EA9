@@ -20,10 +20,13 @@ jobs:
 
       - name: Build EA9Updater.exe
         working-directory: tools/win_updater
-        run: dotnet build EA9Updater.csproj -c Release -o out
+        shell: powershell
+        run: |
+          dotnet build EA9Updater.csproj -c Release -o out
+          Move-Item -Force "out\EA9Updater.exe" "out\Community EA9 Firmware Updater v2.4.0-XPD0.5.exe"
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EA9Updater-0.5mm-mod
-          path: tools/win_updater/out/EA9Updater.exe
+          name: Community-EA9-Updater-v2.4.0-XPD0.5
+          path: tools/win_updater/out/*.exe
