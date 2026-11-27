@@ -1,0 +1,58 @@
+name: Build macOS Updater
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/mac_updater/**'
+      - 'tools/gen_optical.py'
+      - 'tools/win_updater/cfgblock.py'
+      - 'tools/win_updater/firmware/ea9.bin'
+      - 'tools/win_updater/changelog*.txt'
+
+jobs:
+  build-mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            arch_name: AppleSilicon-arm64
+          - os: macos-15-intel
+            arch_name: Intel-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 hidapi pyinstaller
+
+      - name: Build .app and package .dmg
+        run: |
+          pyinstaller --noconfirm --windowed --name EA9Updater \
+            --hidden-import hid \
+            --paths tools --paths tools/win_updater \
+            --add-data "tools/win_updater/firmware/ea9.bin:firmware" \
+            --add-data "tools/win_updater/src/Firmware.cs:win_src" \
+            --add-data "tools/win_updater/changelog.txt:win_docs" \
+            --add-data "tools/win_updater/changelog.zh.txt:win_docs" \
+            tools/mac_updater/ea9_mac_updater.py
+          mkdir -p out_dmg
+          hdiutil create -volname "EA9Updater-v2.4.0-XPD0.5" \
+            -srcfolder dist/EA9Updater.app \
+            -ov -format UDZO \
+            "out_dmg/Community-EA9-Updater-v2.4.0-XPD0.5-macOS-${{ matrix.arch_name }}.dmg"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Community-EA9-Updater-v2.4.0-XPD0.5-macOS-${{ matrix.arch_name }}
+          path: out_dmg/*.dmg
