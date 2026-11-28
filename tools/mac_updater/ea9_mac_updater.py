@@ -421,8 +421,8 @@ class MainWindow(QMainWindow):
         self.config_loaded_from_flash = False
         self.boot_ver = None
 
-        self.resize(900, 800)
-        self.setMinimumSize(820, 720)
+        self.resize(1040, 760)
+        self.setMinimumSize(900, 660)
         root = QWidget()
         self.setCentralWidget(root)
         lay = QVBoxLayout(root)
@@ -442,8 +442,9 @@ class MainWindow(QMainWindow):
         # 更新说明文本框
         self.notes_box = QTextEdit()
         self.notes_box.setReadOnly(True)
-        self.notes_box.setMinimumHeight(140)
-        lay.addWidget(self.notes_box, 1)
+        self.notes_box.setMinimumHeight(72)
+        self.notes_box.setMaximumHeight(104)
+        lay.addWidget(self.notes_box, 0)
 
         # 硬件版本 + 帮助链接
         hw_row = QHBoxLayout()
@@ -522,8 +523,11 @@ class MainWindow(QMainWindow):
             f.setMaximumWidth(90)
             n = QLineEdit()
             n.setMaxLength(63)
+            n.setMinimumWidth(360)
+            n.setToolTip(self._t("Lens name (up to 63 ASCII characters)", "镜头名称（最多 63 个 ASCII 字符）"))
             n.setVisible(False)
             x = self._make_xpd_spin(45.0)
+            x.setMaximumWidth(120)
             x.setVisible(False)
             f.textChanged.connect(lambda _t, fn=f, nm=n, xp=x: self._on_slot_focal(fn, nm, xp))
             self.slot_focal.append(f)
@@ -553,8 +557,8 @@ class MainWindow(QMainWindow):
         action_row.setSpacing(12)
 
         backup_group = QGroupBox()
-        backup_actions = QVBoxLayout(backup_group)
-        backup_actions.setSpacing(8)
+        backup_actions = QGridLayout(backup_group)
+        backup_actions.setSpacing(4)
         self.backup_btn = QPushButton()
         self.backup_btn.setEnabled(False)
         self.backup_btn.clicked.connect(self.on_backup)
@@ -564,20 +568,26 @@ class MainWindow(QMainWindow):
         self.new_lens_btn.clicked.connect(self.on_new_lens_config)
         self.save_lens_btn = QPushButton()
         self.save_lens_btn.clicked.connect(self.on_save_lens_config)
-        backup_actions.addWidget(self.backup_btn)
-        backup_actions.addWidget(self.load_lens_btn)
-        backup_actions.addWidget(self.new_lens_btn)
-        backup_actions.addWidget(self.save_lens_btn)
+        for button in (self.backup_btn, self.load_lens_btn, self.new_lens_btn, self.save_lens_btn):
+            button.setMinimumHeight(30)
+            button.setMaximumHeight(34)
+        backup_actions.addWidget(self.backup_btn, 0, 0)
+        backup_actions.addWidget(self.load_lens_btn, 0, 1)
+        backup_actions.addWidget(self.new_lens_btn, 1, 0)
+        backup_actions.addWidget(self.save_lens_btn, 1, 1)
 
         device_group = QGroupBox()
         device_actions = QVBoxLayout(device_group)
-        device_actions.setSpacing(8)
+        device_actions.setSpacing(4)
         self.restore_btn = QPushButton()
         self.restore_btn.setEnabled(False)
         self.restore_btn.clicked.connect(self.on_restore)
         self.write_btn = QPushButton()
         self.write_btn.setEnabled(False)
         self.write_btn.clicked.connect(self.on_write)
+        for button in (self.restore_btn, self.write_btn):
+            button.setMinimumHeight(30)
+            button.setMaximumHeight(34)
         device_actions.addWidget(self.restore_btn)
         device_actions.addWidget(self.write_btn)
 
