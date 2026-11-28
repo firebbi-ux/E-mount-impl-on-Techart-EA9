@@ -918,17 +918,25 @@ class MainWindow(QMainWindow):
         self.update_mode()
 
     def on_new_lens_config(self):
-        if QMessageBox.question(self, self.windowTitle(),
-                self._t("Clear the current lens settings and start a new 8-slot TXT configuration?",
-                        "清空当前镜头设置并新建八槽位 TXT 配置？"),
-                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+        path, _ = QFileDialog.getSaveFileName(
+            self, self._t("Create EA9 lens TXT template", "新建 EA9 镜头 TXT 模板"),
+            os.path.join(os.path.expanduser("~"), "ea9-lens-config.txt"),
+            "EA9 lens configuration (*.txt)"
+        )
+        if not path:
             return
-        self.single_focal.clear()
-        self.single_name.setText(DEFAULT_NAME)
-        self.single_xpd.setValue(45.0)
-        self._apply_lens_slots([(0, "", 0.0)] * 8)
-        self.multi_radio.setChecked(True)
-        self.status_lbl.setText(self._t("New empty lens configuration.", "已新建空白镜头配置。"))
+        if not path.lower().endswith(".txt"):
+            path += ".txt"
+        try:
+            template = lens_config_txt.format_txt([(0, "", 0.0)] * 8, allow_empty=True)
+            with open(path, "w", encoding="utf-8") as target:
+                target.write(template)
+            self._apply_lens_slots([(0, "", 0.0)] * 8)
+            self.multi_radio.setChecked(True)
+            self.status_lbl.setText(self._t(f"Created lens TXT template: {path}",
+                                             f"已新建镜头 TXT 模板：{path}"))
+        except Exception as e:
+            QMessageBox.critical(self, self.windowTitle(), str(e))
 
     def on_load_lens_config(self):
         path, _ = QFileDialog.getOpenFileName(
