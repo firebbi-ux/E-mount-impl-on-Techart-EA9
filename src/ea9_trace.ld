@@ -141,7 +141,7 @@ SECTIONS
     . = ALIGN(4);
     _end = . ;
 
-    /* TRACE data is RAM-only; its load image must never overlap the LOG area. */
+    /* TRACE snapshot code/data live in the app; persistent snapshots use LOG at runtime. */
     ASSERT(_etext + SIZEOF(.relocate) <= 0x00016000,
            "TRACE application load image overlaps LOG region at 0x16000")
 }
