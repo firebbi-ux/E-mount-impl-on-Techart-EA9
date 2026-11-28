@@ -17,6 +17,7 @@ struct trace_record {
 struct trace_buffer {
  struct trace_record records[TRACE_CAPACITY];
  uint32_t write_count, dropped, session, start_us, next_sample_us;
+ int32_t target;
  uint16_t event_base;
  uint8_t active, event_queued, event_sent, reserved;
 };

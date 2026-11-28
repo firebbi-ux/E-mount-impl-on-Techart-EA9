@@ -76,7 +76,7 @@ OPT     := -O2
 CONFIG  := -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE
 LOGSRCS := src/trace.c
 else
-$(error BUILD must be debug or release, not "$(BUILD)")
+$(error BUILD must be debug, release or trace, not "$(BUILD)")
 endif
 
 # -MMD -MP: emit header dependencies.  Without them, editing a .h leaves every
@@ -122,6 +122,13 @@ ifeq ($(BUILD),debug)
 	  && echo "  verified: motor drive ENABLED (DRY0 marker)" \
 	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
 else
+	@if [ "$(BUILD)" = trace ]; then \
+	    $(TOOLCHAIN)nm $(TARGET).elf | grep -q ' g_trace$' \
+	      || { echo "  FAIL: TRACE buffer missing from image"; exit 1; }; \
+	    $(TOOLCHAIN)nm $(TARGET).elf | grep -q ' trace_service$' \
+	      || { echo "  FAIL: TRACE service missing from image"; exit 1; }; \
+	    echo "  verified: RAM-only TRACE module linked"; \
+	 fi
 	@# The release image is checked for the OPPOSITE of the debug image: the
 	@# marker page is written by the trail, so its absence says the trail
 	@# really is gone from the binary and not merely quiet at runtime.

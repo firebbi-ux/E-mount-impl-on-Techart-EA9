@@ -1488,7 +1488,6 @@ static uint8_t focus_retarget(int32_t *target)
 	 * leg is that Move's, and answers it when it ends. */
 	if (c.silent && !g_leg_silent) {
 		em_post_event(EM_REC_MOVE, 0x00u);
-		trace_event_queued();
 	}
 	g_leg_silent  = c.silent;
 	g_last_target = c.target;
@@ -1955,6 +1954,7 @@ static void focus_exec(const struct em_focus_cmd *c)
 		/* A 0x34 move is answered by its own reply, not by 1D 00;
 		 * the leg's last instruction decides (focus_retarget). */
 		em_post_event(EM_REC_MOVE, 0x00u);
+		trace_event_queued();
 	}
 }
 

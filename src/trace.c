@@ -15,7 +15,7 @@ void trace_init(void)
 {
  uint32_t i;
  g_trace.write_count=0; g_trace.dropped=0; g_trace.session=0;
- g_trace.start_us=0; g_trace.next_sample_us=0; g_trace.event_base=0;
+ g_trace.start_us=0; g_trace.next_sample_us=0; g_trace.target=0; g_trace.event_base=0;
  g_trace.active=0; g_trace.event_queued=0; g_trace.event_sent=0;
  for(i=0;i<TRACE_CAPACITY;i++) {
   g_trace.records[i].t_us=0; g_trace.records[i].pos=0;
@@ -25,11 +25,10 @@ void trace_init(void)
 }
 void trace_begin(int32_t pos,int32_t target,uint8_t outcome,uint16_t events_sent)
 {
- g_trace.active=0; g_trace.session++; g_trace.start_us=micros();
+ g_trace.active=0; g_trace.session++; g_trace.start_us=micros(); g_trace.target=target;
  g_trace.next_sample_us=g_trace.start_us+TRACE_SAMPLE_US;
  g_trace.event_base=events_sent; g_trace.event_queued=0; g_trace.event_sent=0;
  trace_put(TRACE_BEGIN,outcome,pos);
- (void)target;
  g_trace.active=1;
 }
 void trace_new_command(void)
