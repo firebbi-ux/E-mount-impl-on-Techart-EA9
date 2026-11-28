@@ -936,7 +936,7 @@ class MainWindow(QMainWindow):
                 x.setValue(float(xpd) if mm else 45.0)
         self.update_mode()
 
-     def on_load_lens_config(self):
+    def on_load_lens_config(self):
         path, _ = QFileDialog.getOpenFileName(
             self, self._t("Open EA9 lens TXT", "打开 EA9 镜头 TXT"),
             os.path.expanduser("~"), "EA9 lens configuration (*.txt);;Text files (*.txt)"
