@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "trace.h"
+#include "emount.h"
 static uint32_t now_us;
 static int32_t position;
 uint32_t micros(void){return now_us;}
@@ -15,7 +16,7 @@ int main(void)
  check(g_trace.records[0].kind==TRACE_BEGIN,"begin marker");
  trace_event_queued(0);
  check(g_trace.records[1].kind==TRACE_EVENT_QUEUED,"queue marker");
- trace_event_tx(0x1Du,0x00u);
+ trace_event_tx(EM_REC_MOVE,0x00u);
  check(g_trace.records[2].kind==TRACE_EVENT_SENT,"transmit marker");
  check(g_trace.target==200,"commanded target retained");
  now_us=3000; trace_service(); check(g_trace.write_count==3,"no early sample");
@@ -27,7 +28,7 @@ int main(void)
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_FINISHED,"finished marker");
  trace_begin(10,20,0);
  trace_event_queued(1);
- trace_event_tx(0x1Cu,0x01u);
+ trace_event_tx(EM_REC_STOP,0x01u);
  check(!g_trace.event_sent,"older queued event is not mistaken for Move");
  trace_event_tx(0x1Du,0x00u);
  check(g_trace.event_sent,"Move event recognized after earlier queue item");
