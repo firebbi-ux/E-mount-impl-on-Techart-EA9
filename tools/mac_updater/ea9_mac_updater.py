@@ -4,6 +4,7 @@
 import os
 import re
 import sys
+import struct
 import hid
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QPixmap
@@ -37,7 +38,10 @@ PID = 0x575A
 MAGIC = b"\x95\x27\x68\x18"
 CMD_START = b"\x01\x01"
 CMD_CHECK = b"\x02\x02"
+CMD_READ = b"\x03\x03"
 REPORT_LEN = 64
+APP_BASE = 0x00005000
+APP_SAFE_END = 0x00016000
 SLOT_APERTURES = ("f/2.5", "f/2.8", "f/3.2", "f/3.5", "f/4.0", "f/4.5", "f/5.0", "f/5.6")
 DEFAULT_NAME = "Community EA9 Adapter"
 FOCAL_MIN, FOCAL_MAX = 8, 600
@@ -144,6 +148,13 @@ class HidBootloader:
         self.send(MAGIC + CMD_START + bytes(version))
         self._expect(CMD_START)
 
+    def read_at(self, address):
+        self.send(MAGIC + CMD_READ + struct.pack("<I", address))
+        rep = self.recv()
+        if rep is None:
+            raise TimeoutError(f"No readback from flash 0x{address:08x}")
+        return rep
+
 
 class FlashWorker(QThread):
     progress = Signal(int, str)
@@ -158,6 +169,13 @@ class FlashWorker(QThread):
 
     def run(self):
         try:
+            limit = (len(self.image) // 1024) * 1024 + 1024
+            transfer_bytes = limit + REPORT_LEN
+            if APP_BASE + transfer_bytes > APP_SAFE_END:
+                raise ValueError(
+                    f"Image plus bootloader padding ends at 0x{APP_BASE + transfer_bytes:08x}, "
+                    f"past LOG boundary 0x{APP_SAFE_END:08x}"
+                )
             with HidBootloader(self.path) as dev:
                 v = dev.check()
                 msg0 = (f"已找到转接环（引导程序记录 {v[0]}.{v[1]}.{v[2]}），正在准备…"
@@ -165,7 +183,6 @@ class FlashWorker(QThread):
                         f"Found adapter (bootloader {v[0]}.{v[1]}.{v[2]}). Preparing...")
                 self.progress.emit(0, msg0)
                 dev.start(self.declare_ver)
-                limit = (len(self.image) // 1024) * 1024 + 1024
                 pos = 0
                 last_pct = -1
                 while pos <= limit:
@@ -178,6 +195,16 @@ class FlashWorker(QThread):
                         last_pct = pct
                         wmsg = f"正在写入固件… {pct}%" if self.zh else f"Writing firmware... {pct}%"
                         self.progress.emit(pct, wmsg)
+                verify_msg = ("正在回读校验固件…" if self.zh else "Reading firmware back for verification...")
+                self.progress.emit(100, verify_msg)
+                for offset in range(0, len(self.image), REPORT_LEN):
+                    actual = dev.read_at(APP_BASE + offset)
+                    expected = self.image[offset:offset + REPORT_LEN]
+                    if actual[:len(expected)] != expected:
+                        mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
+                        raise IOError(
+                            f"Readback mismatch at flash 0x{APP_BASE + offset + mismatch:08x}"
+                        )
             ok_msg = ("固件写入成功！现在请拔下 USB 线。"
                       if self.zh else
                       "The firmware was written successfully. Unplug the USB cable now.")
