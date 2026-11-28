@@ -131,14 +131,14 @@ else
 	@if [ "$(BUILD)" = trace ]; then \
 	    awk 'index($$0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
-	    awk 'index($0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
-	    if awk 'index($0, "nvm_log_") { found=1 } END { exit !found }' $(TARGET).map; then \
+	    if awk 'index($$0, "nvm_log_") { found=1 } END { exit !found }' $(TARGET).map; then \
 	      echo "  FAIL: diagnostic LOG writer linked into TRACE image"; exit 1; \
 	    fi; \
-	    awk 'index($0, "nvm_cfg_write") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "nvm_cfg_write") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: persistent CFG writer missing from TRACE image"; exit 1; }; \
-	    awk 'index($0, "nvm_cfg_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "nvm_cfg_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: persistent CFG erase routine missing from TRACE image"; exit 1; }; \
 	    echo "  verified: TRACE is RAM-only; CFG persistence retained, LOG writer absent"; \
 	 fi
