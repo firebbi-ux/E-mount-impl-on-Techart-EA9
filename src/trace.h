@@ -1,0 +1,42 @@
+#ifndef TRACE_H
+#define TRACE_H
+#include <stdint.h>
+#ifdef EA9_TRACE
+#define TRACE_CAPACITY 256u
+#define TRACE_SAMPLE_US 5000u
+#define TRACE_WINDOW_US 1000000u
+enum trace_kind { TRACE_BEGIN=1, TRACE_TARGET, TRACE_SAMPLE, TRACE_EVENT_QUEUED,
+ TRACE_EVENT_SENT, TRACE_CANCELLED, TRACE_FINISHED };
+struct trace_record {
+ uint32_t t_us;
+ int32_t pos;
+ uint8_t kind;
+ uint8_t detail;
+ uint16_t reserved;
+};
+struct trace_buffer {
+ struct trace_record records[TRACE_CAPACITY];
+ uint32_t write_count, retained_count, overwritten_count;
+ uint32_t dropped, session, session_first, start_us, next_sample_us;
+ int32_t target;
+ uint8_t events_ahead, active, event_queued, event_sent;
+};
+extern struct trace_buffer g_trace;
+void trace_init(void);
+void trace_begin(int32_t pos, int32_t target, uint8_t outcome);
+void trace_new_command(void);
+void trace_event_queued(uint8_t events_ahead);
+void trace_event_tx(uint8_t code, uint8_t param);
+void trace_service(void);
+int trace_save(void);
+#else
+static inline void trace_init(void) {}
+static inline void trace_begin(int32_t p,int32_t t,uint8_t o)
+{(void)p;(void)t;(void)o;}
+static inline void trace_new_command(void) {}
+static inline void trace_event_queued(uint8_t n) {(void)n;}
+static inline void trace_event_tx(uint8_t c,uint8_t p) {(void)c;(void)p;}
+static inline void trace_service(void) {}
+static inline int trace_save(void) { return 0; }
+#endif
+#endif

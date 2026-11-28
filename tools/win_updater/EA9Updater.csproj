@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- .NET Framework 4.8 ships with Windows 10/11, so the exe runs with
+       nothing installed.  Builds on Linux with the .NET SDK: the reference
+       assemblies come from NuGet.  See spec.md. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <RootNamespace>EA9Updater</RootNamespace>
+    <AssemblyName>EA9Updater</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Product>Community EA9 Firmware Updater</Product>
+    <Version>2.4.0</Version>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- No EA9Updater.exe.config: the exe is the only file shipped. -->
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="src\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- The firmware and the change log go INTO the exe.  firmware/ is
+       written by build.sh: the release image, checked by cfgblock.py. -->
+  <ItemGroup>
+    <EmbeddedResource Include="firmware\ea9.bin" LogicalName="firmware.bin" />
+    <EmbeddedResource Include="changelog.txt" LogicalName="changelog.txt" />
+    <!-- WithCulture: without it MSBuild reads ".zh." as a culture and puts
+         the file in a zh\ satellite assembly instead of the exe. -->
+    <EmbeddedResource Include="changelog.zh.txt" LogicalName="changelog.zh.txt" WithCulture="false" />
+    <EmbeddedResource Include="assets\hw_version.jpg" LogicalName="hw_version.jpg" />
+  </ItemGroup>
+
+  <Target Name="CheckFirmware" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('firmware\ea9.bin')"
+           Text="firmware/ea9.bin is missing -- run build.sh, which builds the release image and checks it first." />
+  </Target>
+
+</Project>

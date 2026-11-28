@@ -1,0 +1,257 @@
+# LM-EA9 app-image rebuild.
+#
+# Target: SAMD21E17A, 128 KB flash.  A 20 KB bootloader owns 0x0000-0x5000 and
+# jumps to 0x5000 without validating anything (EA9.md 11.3), so the app image is
+# linked at 0x5000 and flashed there by tools/ea9flash.py.
+#
+#   make            DEBUG image   -> build/ea9-rebuild.bin
+#   make release    RELEASE image -> build/ea9-rebuild-release.bin
+#   make trace      TRACE investigation image -> build/ea9-rebuild-trace.bin
+#   make hosttest   run the host test suite (emount, servo, no-body,
+#                   init, focus map/distance/prediction)
+#   make clean
+#
+# THREE configurations, deliberately separated by object directory:
+#
+#   | | optimisation | flash logging |
+#   | debug   | -O1 -DDEBUG | diagnostic LOG enabled |
+#   | release | -O2 -DEA9_NO_LOG -DNDEBUG | no LOG writer at all |
+#   | trace   | -O2 -DEA9_NO_LOG -DEA9_TRACE -DNDEBUG | TRACE-only snapshot writer |
+#
+# Release writes no LOG: diagnostic logging is compiled out. TRACE also
+# removes diag.c/trail.c and nvm_log_* but links a separate nvm_trace_* writer
+# whose address checks confine snapshots to the 0x16000-0x1C000 LOG region.
+# The TRACE writer is called only after the shutdown acknowledgement, never
+# from focus/servo/status-frame processing. The map check enforces both facts.
+#
+# Release DOES write configuration (cfg.c, through nvm_cfg_*), confined to its
+# own region at 0x1C000 and written only when a value changes (src/nvm.h).
+# All flash erase/program goes through nvm.c; clock.c and startup_samd21.c
+# touch NVMCTRL only for wait states and the MANW errata bit.
+#
+# Each configuration has its OWN object directory.  Sharing one is how a
+# build system starts handing you the wrong image while reporting success --
+# it has happened here (NOTES.md §21, §43, §51).  If you add a third
+# configuration, give it its own directory too, or do not add it.
+#
+# (The noshut / nopa23 / nobusoff / pins-early / dry-run variants were the
+# boot-regression bisect; it concluded (NOTES.md §52) and they are gone.)
+
+TOOLCHAIN ?= $(HOME)/opt/arm-gcc/bin/arm-none-eabi-
+HOSTCC    ?= gcc
+ASF4      ?= $(HOME)/opt/asf4/samd21
+
+CC      := $(TOOLCHAIN)gcc
+OBJCOPY := $(TOOLCHAIN)objcopy
+SIZE    := $(TOOLCHAIN)size
+
+PART    := __SAMD21E17A__
+OUT     := build
+
+# The configuration.  `make release` re-enters with BUILD=release; everything
+# below is written once and parameterised, so the two images cannot drift.
+BUILD ?= debug
+
+ifeq ($(BUILD),debug)
+OBJDIR  := $(OUT)/obj-debug
+TARGET  := $(OUT)/ea9-rebuild
+# -O1 is what every hardware result in NOTES.md was obtained at.
+OPT     := -O1
+# -DDEBUG matches the stock build, which has ASF4's __FILE__ assert strings in
+# .rodata (rebuild/NOTES.md 6).
+CONFIG  := -DDEBUG
+LOGSRCS := src/diag.c src/trail.c
+else ifeq ($(BUILD),release)
+OBJDIR  := $(OUT)/obj-release
+TARGET  := $(OUT)/ea9-rebuild-release
+OPT     := -O2
+# EA9_NO_LOG turns the whole diag/trail interface into inline no-ops, so the
+# callers' page-building code is dead and goes with it.
+CONFIG  := -DNDEBUG -DEA9_NO_LOG
+LOGSRCS :=
+else ifeq ($(BUILD),trace)
+OBJDIR  := $(OUT)/obj-trace
+TARGET  := $(OUT)/ea9-rebuild-trace
+OPT     := -O2
+CONFIG  := -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE
+LOGSRCS := src/trace.c src/trace_store.c
+else
+$(error BUILD must be debug, release or trace, not "$(BUILD)")
+endif
+
+# -MMD -MP: emit header dependencies.  Without them, editing a .h leaves every
+# .o that includes it stale, and the link succeeds -- so the image silently
+# mixes objects compiled against different versions of the same constant.  That
+# happened: diag.h's DIAG_PAGES went 16 -> 32, diag.o was not rebuilt, and
+# diag_page() rejected every page above 15 without a word.  A whole camera run
+# was spent on it (NOTES.md §21).
+CFLAGS  := -mthumb -mcpu=cortex-m0plus $(OPT) $(CONFIG) -D$(PART) \
+           -ffunction-sections -fdata-sections -fno-common \
+           -Wall -Wextra -std=gnu99 -g -MMD -MP
+
+INCLUDES := -Isrc \
+            -I$(ASF4) -I$(ASF4)/config -I$(ASF4)/include \
+            -I$(ASF4)/CMSIS/Include \
+            -I$(ASF4)/hal/include -I$(ASF4)/hal/utils/include \
+            -I$(ASF4)/hpl/core -I$(ASF4)/hpl/pm -I$(ASF4)/hpl/port \
+            -I$(ASF4)/hri
+
+ifeq ($(BUILD),trace)
+LINKER_SCRIPT := src/ea9_trace.ld
+else
+LINKER_SCRIPT := src/ea9.ld
+endif
+
+LDFLAGS  = -mthumb -mcpu=cortex-m0plus -T$(LINKER_SCRIPT) -Wl,--gc-sections \
+           -Wl,-Map=$(TARGET).map --specs=nano.specs --specs=nosys.specs
+
+SRCS := src/startup_samd21.c src/system_samd21.c src/board.c \
+        src/clock.c src/delay.c \
+        src/emount.c src/emount_packets.c src/optical_file.c \
+        src/em_uart.c src/em_eic.c \
+        src/nvm.c src/cfg.c src/lens_cfg.c $(LOGSRCS) \
+        src/motor.c src/abs_encoder.c src/servo.c src/focus_map.c \
+        src/focus_dist.c \
+        src/vdd.c \
+        src/main.c
+
+OBJS := $(patsubst src/%.c,$(OBJDIR)/%.o,$(SRCS))
+DEPS := $(OBJS:.o=.d)
+HOSTTEST := $(OUT)/hosttest
+
+all: $(TARGET).bin
+ifeq ($(BUILD),debug)
+	@grep -q SLPW $(TARGET).bin \
+	  && echo "  verified: shutdown = bus off + TX low + standby wait (SLPW marker)" \
+	  || { echo "  FAIL: no SLPW marker in the image"; exit 1; }
+	@grep -q DRY0 $(TARGET).bin \
+	  && echo "  verified: motor drive ENABLED (DRY0 marker)" \
+	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
+else
+	@if [ "$(BUILD)" = trace ]; then \
+	    awk 'index($$0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
+	    awk 'index($$0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
+	    awk 'index($$0, "trace_save") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE persistence hook missing from linker map"; exit 1; }; \
+	    awk 'index($$0, "nvm_trace_write") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE NVM writer missing from linker map"; exit 1; }; \
+	    awk 'index($$0, "nvm_trace_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE NVM eraser missing from linker map"; exit 1; }; \
+	    awk 'index($$0, "nvm_trace_read") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: TRACE NVM reader missing from linker map"; exit 1; }; \
+	    if awk 'index($$0, "nvm_log_") { found=1 } END { exit !found }' $(TARGET).map; then \
+	      echo "  FAIL: diagnostic LOG writer linked into TRACE image"; exit 1; \
+	    fi; \
+	    awk 'index($$0, "nvm_cfg_write") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: persistent CFG writer missing from TRACE image"; exit 1; }; \
+	    awk 'index($$0, "nvm_cfg_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
+	      || { echo "  FAIL: persistent CFG erase routine missing from TRACE image"; exit 1; }; \
+	    echo "  verified: TRACE snapshot writer is present; CFG retained; diagnostic LOG writer absent"; \
+	 fi
+	@# The release image is checked for the OPPOSITE of the debug image: the
+	@# marker page is written by the trail, so its absence says the trail
+	@# really is gone from the binary and not merely quiet at runtime.
+	@if grep -q SLPW $(TARGET).bin || grep -q DRY0 $(TARGET).bin; then \
+	    echo "  FAIL: build-marker strings still in the image -- the trail is compiled in"; \
+	    exit 1; \
+	 fi
+	@echo "  verified: no build-marker page (the trail is compiled out)"
+	@# Diagnostic LOG symbols must be absent. TRACE has its own bounded
+	@# nvm_trace_* path, checked separately above; release has no LOG writer.
+	@if $(TOOLCHAIN)nm $(TARGET).elf | grep -qE ' (diag_|trail_|nvm_log_)'; then \
+	    echo "  FAIL: log symbols linked into a release image:"; \
+	    $(TOOLCHAIN)nm $(TARGET).elf | grep -E ' (diag_|trail_|nvm_log_)'; \
+	    exit 1; \
+	 fi
+	@if [ "$(BUILD)" = trace ]; then \
+	    echo "  verified: diagnostic LOG writer absent; TRACE-only writer is separately bounded"; \
+	 else \
+	    echo "  verified: no diag_*/trail_*/nvm_log_* symbol -- no LOG writes"; \
+	 fi
+endif
+	@echo "  source id: $$(cat src/*.c src/*.h | md5sum | cut -c1-6)"
+
+# `make release` is the same build with BUILD=release; `make debug` is a name
+# for the default so both configurations can be asked for the same way.
+release:
+	@$(MAKE) --no-print-directory BUILD=release all
+
+trace:
+	@$(MAKE) --no-print-directory BUILD=trace all
+
+debug:
+	@$(MAKE) --no-print-directory BUILD=debug all
+
+$(OBJDIR):
+	@mkdir -p $(OBJDIR)
+
+$(OBJDIR)/%.o: src/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+# diag.c carries the build stamp that tells the device "this is a new image,
+# start the boot tally over".  It has to be rebuilt every time or the stamp
+# tracks the last change to diag.c instead of the last change to the image --
+# which it did, and two runs' boots were read as one.
+.PHONY: FORCE
+FORCE:
+$(OBJDIR)/diag.o: src/diag.c FORCE | $(OBJDIR)
+	$(CC) $(CFLAGS) -DDIAG_BUILD_STAMP=$$(date +%s) \
+	  -DDIAG_SRC_ID=0x$$(cat src/*.c src/*.h | md5sum | cut -c1-6) \
+	  $(INCLUDES) -c $< -o $@
+
+$(TARGET).elf: $(OBJS)
+	$(CC) $(OBJS) $(LDFLAGS) -o $@
+	@$(SIZE) $@
+
+$(TARGET).bin: $(TARGET).elf
+	$(OBJCOPY) -O binary $< $@
+	@echo "built $@ ($$(stat -c%s $@) bytes)"
+
+# The responder, compiled for the host and driven through scripted body
+# traffic.  It compiles src/emount.c unmodified, so what passes here is the
+# code that ships -- see tools/hosttest/.
+hosttest:
+	@mkdir -p $(HOSTTEST)
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_emount.c tools/hosttest/shim.c \
+	  src/emount.c src/emount_packets.c src/optical_file.c -o $(HOSTTEST)/test_emount
+	@$(HOSTTEST)/test_emount
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_servo.c tools/hosttest/sim_motor.c \
+	  src/servo.c -o $(HOSTTEST)/test_servo
+	@$(HOSTTEST)/test_servo
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_nobody.c tools/hosttest/shim.c \
+	  src/emount.c src/emount_packets.c src/optical_file.c -o $(HOSTTEST)/test_nobody
+	@$(HOSTTEST)/test_nobody nobody
+	@$(HOSTTEST)/test_nobody slowbody
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_init.c tools/hosttest/shim.c \
+	  src/emount.c src/emount_packets.c src/optical_file.c -o $(HOSTTEST)/test_init
+	@$(HOSTTEST)/test_init
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_focus.c src/focus_map.c -o $(HOSTTEST)/test_focus
+	@$(HOSTTEST)/test_focus
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -Itools/hosttest -Isrc \
+	  tools/hosttest/test_focus_dist.c src/focus_dist.c -lm \
+	  -o $(HOSTTEST)/test_focus_dist
+	@$(HOSTTEST)/test_focus_dist
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
+	  tools/hosttest/test_trace.c src/trace.c -o $(HOSTTEST)/test_trace
+	@$(HOSTTEST)/test_trace
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
+	  tools/hosttest/test_trace_store.c src/trace.c src/trace_store.c -o $(HOSTTEST)/test_trace_store
+	@$(HOSTTEST)/test_trace_store
+	python3 tools/hosttest/test_ea9flash.py
+	python3 -m py_compile tools/ea9flash.py tools/mac_updater/ea9_mac_updater.py tools/mac_updater/ea9_dump.py tools/mac_updater/ea9_trace_decode.py
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
+	  -c src/emount.c -o $(HOSTTEST)/emount-trace.o
+
+clean:
+	rm -rf $(OUT)
+
+-include $(DEPS)
+
+.PHONY: all debug release trace hosttest clean

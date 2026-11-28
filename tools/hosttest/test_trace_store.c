@@ -1,0 +1,156 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "trace.h"
+#include "nvm.h"
+#include "emount.h"
+
+static uint32_t now_us;
+static int32_t position;
+static uint8_t flash_image[NVM_LOG_END - NVM_LOG_BASE];
+static unsigned erase_calls, write_calls;
+static uint32_t first_write_addr, last_write_addr;
+static unsigned fail_erase_call, fail_write_call;
+static int corrupt_read;
+
+uint32_t micros(void) { return now_us; }
+int32_t abs_encoder_track(void) { return position; }
+
+int nvm_trace_erase_row(uint32_t address)
+{
+    if (fail_erase_call != 0u && erase_calls + 1u == fail_erase_call) { erase_calls++; return 0; }
+    uint32_t offset = address - NVM_LOG_BASE;
+    if (address % NVM_ROW_SIZE || offset + NVM_ROW_SIZE > sizeof(flash_image)) abort();
+    memset(flash_image + offset, 0xFF, NVM_ROW_SIZE);
+    erase_calls++;
+    return 1;
+}
+
+int nvm_trace_read(uint32_t address, uint32_t *words, uint32_t count)
+{
+    uint32_t offset = address - NVM_LOG_BASE;
+    if (address % 4u || offset + count * 4u > sizeof(flash_image)) abort();
+    memcpy(words, flash_image + offset, count * 4u);
+    if (corrupt_read && count != 0u) ((uint8_t *)words)[0] ^= 0x01u;
+    return 1;
+}
+
+int nvm_trace_write(uint32_t address, const uint32_t *words, uint32_t count)
+{
+    uint32_t offset = address - NVM_LOG_BASE, i;
+    const uint8_t *src = (const uint8_t *)words;
+    if (write_calls == 0u) first_write_addr = address;
+    last_write_addr = address;
+    write_calls++;
+    if (fail_write_call != 0u && write_calls == fail_write_call) return 0;
+    if (address % NVM_PAGE_SIZE || count != 16u
+        || offset + NVM_PAGE_SIZE > sizeof(flash_image)) abort();
+    for (i = 0; i < NVM_PAGE_SIZE; i++) flash_image[offset + i] &= src[i];
+    return 1;
+}
+
+static void check(int ok, const char *message)
+{
+    if (!ok) { fprintf(stderr, "FAIL: %s\n", message); exit(1); }
+}
+
+static uint32_t crc32(const uint8_t *p, uint32_t n)
+{
+    uint32_t crc = 0xFFFFFFFFu, i;
+    unsigned b;
+    for (i = 0; i < n; i++) {
+        crc ^= p[i];
+        for (b = 0; b < 8; b++)
+            crc = (crc >> 1) ^ (0xEDB88320u & (uint32_t)-(int32_t)(crc & 1u));
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+static const uint32_t *header(unsigned slot)
+{
+    return (const uint32_t *)(flash_image + slot * 0x400u);
+}
+
+int main(void)
+{
+    unsigned i;
+    uint32_t count, bytes, expected_first;
+    const uint32_t *h;
+    const uint8_t *data;
+
+    memset(flash_image, 0xFF, sizeof(flash_image));
+    trace_init();
+    for (i = 0; i < TRACE_CAPACITY + 20u; i++) {
+        now_us += 1000u;
+        position = (int32_t)(1000u + i);
+        trace_begin(position, position + 7, 0);
+    }
+    check(g_trace.retained_count == TRACE_CAPACITY, "ring fills before snapshot");
+    check(trace_save(), "first snapshot committed");
+    check(erase_calls == 4u, "one save erases exactly one 1 KiB slot");
+    check(write_calls == 16u, "snapshot writes 15 data pages plus one header");
+    check(first_write_addr == NVM_LOG_BASE + 64u,
+          "record data is programmed before the header");
+    check(last_write_addr == NVM_LOG_BASE,
+          "CRC-protected header is the final flash program");
+    check(!trace_save(), "unchanged ring is not written a second time");
+    check(erase_calls == 4u, "duplicate save does not erase another slot");
+    h = header(0);
+    count = h[3];
+    bytes = count * sizeof(struct trace_record);
+    check(h[0] == 0x45545243u && h[1] == 2u, "header magic/version");
+    check(h[2] == 1u && count == 80u, "first slot sequence and capped count");
+    check(h[12] == crc32((const uint8_t *)h, 12u * sizeof(uint32_t)), "header CRC");
+    data = flash_image + 64u;
+    check(h[11] == crc32(data, bytes), "record stream CRC");
+    expected_first = g_trace.write_count - count;
+    check(memcmp(data, &g_trace.records[expected_first % TRACE_CAPACITY],
+                 sizeof(struct trace_record)) == 0, "snapshot begins at oldest retained record");
+
+    now_us += 1000u;
+    trace_begin(44, 55, 0);
+    check(trace_save(), "second snapshot committed");
+    check(header(1)[2] == 2u, "second save rotates to next slot");
+    check(header(0)[2] == 1u, "previous valid slot survives rotation");
+
+    for (i = 0; i < 23u; i++) {
+        now_us += 1000u;
+        trace_begin((int32_t)i, (int32_t)i + 1, 0);
+        check(trace_save(), "subsequent snapshot committed");
+    }
+    check(header(0)[2] == 25u, "twenty-fifth save reuses oldest slot");
+    check(header(1)[2] == 2u, "other recent slot remains intact");
+    /* Failure injection: a failed NVM operation must leave the slot uncommitted. */
+    memset(flash_image, 0xFF, sizeof(flash_image));
+    erase_calls = write_calls = 0u;
+    fail_erase_call = 1u; fail_write_call = 0u; corrupt_read = 0;
+    trace_init(); trace_begin(10, 20, 0);
+    check(!trace_save(), "erase failure aborts snapshot");
+    check(header(0)[0] == 0xFFFFFFFFu, "erase failure cannot commit header");
+
+    memset(flash_image, 0xFF, sizeof(flash_image));
+    erase_calls = write_calls = 0u;
+    fail_erase_call = 0u; fail_write_call = 1u;
+    trace_init(); trace_begin(30, 40, 0);
+    check(!trace_save(), "data-page write failure aborts snapshot");
+    check(header(0)[0] == 0xFFFFFFFFu, "data write failure cannot commit header");
+
+    memset(flash_image, 0xFF, sizeof(flash_image));
+    erase_calls = write_calls = 0u;
+    fail_write_call = 0u; corrupt_read = 1;
+    trace_init(); trace_begin(50, 60, 0);
+    check(!trace_save(), "readback mismatch aborts snapshot");
+    check(header(0)[0] == 0xFFFFFFFFu, "readback mismatch cannot commit header");
+
+    memset(flash_image, 0xFF, sizeof(flash_image));
+    erase_calls = write_calls = 0u;
+    corrupt_read = 0; fail_write_call = 2u;
+    trace_init(); trace_begin(70, 80, 0);
+    check(!trace_save(), "header commit write failure aborts snapshot");
+    check(header(0)[0] == 0xFFFFFFFFu, "failed header write remains invalid");
+
+    fail_erase_call = fail_write_call = 0u;
+    puts("PASS: TRACE flash slots, CRCs, rotation, and NVM failure handling");
+    return 0;
+}
