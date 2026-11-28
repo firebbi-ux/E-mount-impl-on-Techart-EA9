@@ -308,29 +308,23 @@ The debug image is the instrumented one: it erases and programs pages at
 `0x16000` as it runs, which is what `--dump` reads back and what every result
 in `NOTES.md` was measured with. Use it for camera sessions.
 
-The release image **writes nothing to flash, ever.** That is the point of it:
-flash has a finite number of erase/program cycles, and an adapter that is
-actually in use should not be spending them on a diagnostic trail nobody is
-going to read. It is a compile-time removal, not a runtime switch — `diag.c`
-and `trail.c` are not compiled at all, the headers replace their interface with
-inline no-ops, and the build then *checks* that no `diag_*` or `trail_*` symbol
-was linked:
+The release image removes diagnostic LOG writes. This is a compile-time
+removal, not a runtime switch: `diag.c` and `trail.c` are not compiled, their
+headers replace the interfaces with inline no-ops, and the build checks that
+no `diag_*`, `trail_*`, or `nvm_log_*` symbol was linked.
+
+The persistent CFG writer is deliberately retained in both release and TRACE
+images. It is confined to `0x1C000–0x1D000` and is required to save lens
+configuration. The diagnostic LOG writer is confined to `0x16000–0x1C000`;
+the NVM routines enforce these separate address ranges.
 
 ```
-built build/ea9-rebuild-release.bin (15152 bytes)
-  verified: no build-marker page (the trail is compiled out)
-  verified: no diag_*/trail_* symbol -- the image cannot write flash
-  source id: 11ca60
+verified: no diagnostic LOG writer in release
+verified: CFG persistence remains available
 ```
-
-That check is worth more than reading the code: since every flash write in this
-firmware goes through `diag.c`, the absence of those symbols is proof the image
-has no instruction that can write flash. The only remaining NVMCTRL accesses
-are `Reset_Handler`'s MANW errata bit and `clock_init`'s wait-state setting,
-both of which write `CTRLB` and issue no command.
 
 Each configuration has its own object directory (`build/obj-debug`,
-`build/obj-release`), so switching between them cannot leave a stale object in
+`build/obj-release`, `build/obj-trace`), so switching between them cannot leave a stale object in
 the image — which has cost this project camera runs before (§21, §43, §51).
 
 The TRACE image is a separate investigation build, not a release candidate.
@@ -347,8 +341,7 @@ TRACE uses `src/ea9_trace.ld`, which caps the application load image at
 the existing CFG writer remains enabled for lens configuration in
 `0x1C000–0x1D000`. TRACE itself does not write its RAM records to flash.
 
-Note that the two images are **different binaries**, so a release image is not
-covered by a debug image's hardware results. `make hosttest` exercises the same
+The debug, release, and TRACE images are **different binaries**, so results from one build do not automatically validate another. `make hosttest` exercises the same
 sources either way, but the optimisation level is not the one the recorded
 camera runs used.
 
@@ -379,18 +372,30 @@ sudo udevadm control --reload-rules
 
 Then replug the adapter.
 
+**Back up the complete flash before an experimental write** — this is read-only:
+
+```bash
+python3 tools/ea9flash.py --dump 0x0:0x20000 -o ea9-full-flash-backup.bin
+sha256sum ea9-full-flash-backup.bin
+```
+
 **Check it is there first** — this is read-only and changes nothing:
 
 ```bash
 python3 tools/ea9flash.py --check
 ```
 
-**Flash:**
+**Flash and read back the application image:**
 
 ```bash
-python3 tools/ea9flash.py build/ea9-rebuild.bin            # debug, writes a trail
-python3 tools/ea9flash.py build/ea9-rebuild-release.bin    # release, writes nothing
+python3 tools/ea9flash.py build/ea9-rebuild.bin --verify
+python3 tools/ea9flash.py build/ea9-rebuild-release.bin --verify
 ```
+
+`--verify` reads the app back from `0x5000` over the bootloader READ command
+and compares every image byte. The macOS updater performs the same readback
+check after its write. This verifies the application bytes; it is not a
+substitute for preserving the full-flash backup.
 
 **Read flash back** — used here to recover the diagnostic trail after a camera
 session. A **release** image leaves no trail, so this returns erased flash (or
