@@ -197,10 +197,10 @@ class FlashWorker(QThread):
                         self.progress.emit(pct, wmsg)
                 verify_msg = ("正在回读校验固件…" if self.zh else "Reading firmware back for verification...")
                 self.progress.emit(100, verify_msg)
-                for offset in range(0, len(self.image), REPORT_LEN):
+                for offset in range(0, transfer_bytes, REPORT_LEN):
                     actual = dev.read_at(APP_BASE + offset)
-                    expected = self.image[offset:offset + REPORT_LEN]
-                    if actual[:len(expected)] != expected:
+                    expected = self.image[offset:offset + REPORT_LEN].ljust(REPORT_LEN, b"\\x00")
+                    if actual != expected:
                         mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
                         raise IOError(
                             f"Readback mismatch at flash 0x{APP_BASE + offset + mismatch:08x}"
