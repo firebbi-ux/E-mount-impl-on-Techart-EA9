@@ -342,29 +342,17 @@ class RestoreWorker(QThread):
                 # Preserve the bootloader's current version declaration; this
                 # is bookkeeping separate from the camera-facing version in the app.
                 dev.start(current_version)
-                total = len(payload)
-                for offset in range(0, total, REPORT_LEN):
-                    dev.send(payload[offset:offset + REPORT_LEN])
-                    if dev.recv() is None:
-                        raise TimeoutError(f"Restore stopped acking at app offset 0x{offset:05x}")
-                    pct = min(100, (offset + REPORT_LEN) * 100 // total)
-                    if pct % 2 == 0:
-                        self.progress.emit(pct, (
-                            f"正在恢复原应用区… {pct}%"
-                            if self.zh else f"Restoring original application... {pct}%"
-                        ))
-                self.progress.emit(100, (
-                    "正在逐字节回读验证原应用区…"
-                    if self.zh else "Verifying restored application byte-for-byte..."
+                self.progress.emit(0, (
+                    "正在恢复并逐字节校验原应用区…"
+                    if self.zh else "Restoring and verifying original application byte-for-byte..."
                 ))
-                for offset in range(0, total, REPORT_LEN):
-                    actual = dev.read_at(ea9_safety.APP_BASE + offset)
-                    expected = payload[offset:offset + REPORT_LEN]
-                    if actual != expected:
-                        mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
-                        raise IOError(
-                            f"Restore readback mismatch at flash 0x{ea9_safety.APP_BASE + offset + mismatch:08x}"
-                        )
+                ea9_safety.restore_application_region(
+                    dev, payload,
+                    lambda pct: self.progress.emit(pct, (
+                        f"正在恢复原应用区… {pct}%"
+                        if self.zh else f"Restoring original application... {pct}%"
+                    ))
+                )
                 boot_after = self._read_range(dev, 0, ea9_safety.BOOTLOADER_END)
                 log_after = self._read_range(dev, ea9_safety.LOG_BASE, ea9_safety.FLASH_SIZE)
                 if boot_after != backup_boot:

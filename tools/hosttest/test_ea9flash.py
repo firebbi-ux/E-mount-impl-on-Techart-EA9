@@ -150,6 +150,35 @@ def main():
         pass
     else:
         raise AssertionError("erased bootloader backup was not rejected")
+
+    class RestoreFake:
+        def __init__(self, flash):
+            self.flash = bytearray(flash)
+            self.cursor = ea9_safety.APP_BASE
+            self.written = 0
+            self.read_addresses = []
+        def send(self, chunk):
+            self.flash[self.cursor:self.cursor + 64] = chunk
+            self.cursor += 64
+            self.written += 64
+        def recv(self):
+            return b"ack"
+        def read_at(self, address):
+            self.read_addresses.append(address)
+            return bytes(self.flash[address:address + 64])
+    initial = bytes((i * 13 + 3) & 0xff for i in range(ea9_safety.FLASH_SIZE))
+    replacement = bytes((i * 17 + 9) & 0xff for i in range(ea9_safety.APP_SIZE))
+    fake = RestoreFake(initial)
+    check(ea9_safety.restore_application_region(fake, replacement),
+          "restore transfer must complete and verify")
+    check(fake.written == ea9_safety.APP_SIZE,
+          "restore must send exactly the application partition")
+    check(fake.flash[:ea9_safety.BOOTLOADER_END] == initial[:ea9_safety.BOOTLOADER_END],
+          "restore must leave USB bootloader bytes unchanged")
+    check(fake.flash[ea9_safety.LOG_BASE:] == initial[ea9_safety.LOG_BASE:],
+          "restore must leave TRACE LOG bytes unchanged")
+    check(fake.flash[ea9_safety.APP_BASE:ea9_safety.APP_END] == replacement,
+          "restore must replace exactly the application partition")
     print("PASS: EA9 USB readback, backup integrity, bounded restore, transfer sizing, flash boundary")
 
 

@@ -57,3 +57,21 @@ def verify_sha256_manifest(data, manifest_text):
     if actual != expected:
         raise ValueError("backup SHA-256 does not match its sidecar manifest")
     return actual
+
+def restore_application_region(dev, payload, progress=None):
+    """Stream and verify exactly the application partition, no adjacent bytes."""
+    if len(payload) != APP_SIZE:
+        raise ValueError("restore payload must be exactly the application partition")
+    for offset in range(0, APP_SIZE, REPORT_LEN):
+        dev.send(payload[offset:offset + REPORT_LEN])
+        if dev.recv() is None:
+            raise TimeoutError("restore stream stopped receiving ACKs at 0x%05x" % offset)
+        if progress is not None:
+            progress((offset + REPORT_LEN) * 100 // APP_SIZE)
+    for offset in range(0, APP_SIZE, REPORT_LEN):
+        actual = dev.read_at(APP_BASE + offset)
+        expected = payload[offset:offset + REPORT_LEN]
+        if actual != expected:
+            mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
+            raise IOError("restore readback mismatch at flash 0x%08x" % (APP_BASE + offset + mismatch))
+    return True
