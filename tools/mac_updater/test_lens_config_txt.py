@@ -36,6 +36,16 @@ class LensConfigTxtTests(unittest.TestCase):
         self.assertEqual(hw, 2)
         self.assertEqual(decoded, slots)
 
+    def test_full_flash_reads_only_the_fixed_config_offset(self):
+        slots = [(35, "Lens at slot 1", 42.5)] + [(0, "", 0.0)] * 7
+        block = cfgblock.pack(2, slots)
+        flash = bytearray(0x20000)
+        flash[lens_config_txt.FLASH_CONFIG_OFFSET:
+              lens_config_txt.FLASH_CONFIG_OFFSET + len(block)] = block
+        # An unrelated duplicate marker elsewhere must not affect fixed-offset parsing.
+        flash[0x100:0x100 + len(cfgblock.MAGIC)] = cfgblock.MAGIC
+        self.assertEqual(lens_config_txt.slots_from_flash(bytes(flash)), slots)
+
 
 if __name__ == "__main__":
     unittest.main()
