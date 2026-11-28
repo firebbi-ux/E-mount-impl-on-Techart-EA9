@@ -218,6 +218,8 @@ hosttest:
 	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
 	  tools/hosttest/test_trace.c src/trace.c -o $(HOSTTEST)/test_trace
 	@$(HOSTTEST)/test_trace
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
+	  -c src/emount.c -o $(HOSTTEST)/emount-trace.o
 
 clean:
 	rm -rf $(OUT)
