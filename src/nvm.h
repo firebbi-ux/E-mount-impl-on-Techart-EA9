@@ -5,8 +5,10 @@
  *   LOG  0x16000-0x1C000  the debug trail (diag.c).  Compiled out of the
  *                         release image together with the trail, and the
  *                         Makefile checks no nvm_log_* symbol survived.
- *   CFG  0x1C000-0x1D000  persistent configuration (cfg.c).  In BOTH images:
- *                         it is written only when a value changes.
+ *   TRACE 0x16000-0x1C000 four rotating snapshots in TRACE builds only.
+ *                         This reuses LOG exclusively because EA9_NO_LOG
+ *                         removes every diagnostic LOG writer.
+ *   CFG  0x1C000-0x1D000 persistent configuration (cfg.c), in BOTH images.
  *
  * Every call checks its address against its own region and does nothing
  * outside it, so a wrong address can neither reach the bootloader (0x0-0x5000),
@@ -29,6 +31,10 @@
 #ifndef EA9_NO_LOG
 void nvm_log_erase_row(uint32_t addr);
 void nvm_log_write(uint32_t addr, const uint32_t *w, uint32_t words);
+#endif
+#ifdef EA9_TRACE
+void nvm_trace_erase_row(uint32_t addr);
+void nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words);
 #endif
 
 void nvm_cfg_erase_row(uint32_t addr);
