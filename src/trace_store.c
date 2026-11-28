@@ -38,7 +38,8 @@ static uint32_t crc32_bytes(const uint8_t *data, uint32_t length)
     uint32_t crc = 0xFFFFFFFFu;
     uint32_t i;
     for (i = 0; i < length; i++) crc = crc32_update(crc, data[i]);
-    return crc ^ 0xFFFFFFFFu;
+    *result = crc ^ 0xFFFFFFFFu;
+    return 1;
 }
 
 static uint32_t slot_base(unsigned slot)
@@ -48,7 +49,7 @@ static uint32_t slot_base(unsigned slot)
 
 static int read_header(unsigned slot, uint32_t words[16])
 {
-    nvm_trace_read(slot_base(slot), words, 16u);
+    if (!nvm_trace_read(slot_base(slot), words, 16u)) return 0;
     if (words[0] != TRACE_STORE_MAGIC || words[1] != TRACE_STORE_VERSION
         || words[2] == 0u || words[3] == 0u || words[3] > TRACE_CAPACITY
         || words[5] != words[3]) return 0;
@@ -83,11 +84,11 @@ static uint32_t record_byte(uint32_t logical_byte, uint32_t first)
     return p[byte_index];
 }
 
-static uint32_t readback_crc(uint32_t base, uint32_t length)
+static int readback_crc(uint32_t base, uint32_t length, uint32_t *result)
 {
     uint32_t page[16], crc = 0xFFFFFFFFu, offset, i;
     for (offset = 0; offset < length; offset += NVM_PAGE_SIZE) {
-        nvm_trace_read(base + offset, page, 16u);
+        if (!nvm_trace_read(base + offset, page, 16u)) return 0;
         for (i = 0; i < NVM_PAGE_SIZE && offset + i < length; i++)
             crc = crc32_update(crc, ((const uint8_t *)page)[i]);
     }
@@ -118,8 +119,9 @@ int trace_save(void)
     find_next_slot(&slot, &sequence);
 
     /* Erase exactly one 6 KiB slot (24 rows); never touch CFG or bootloader. */
-    for (row = 0; row < TRACE_STORE_SLOT_ROWS; row++)
-        nvm_trace_erase_row(slot_base(slot) + row * NVM_ROW_SIZE);
+    for (row = 0; row < TRACE_STORE_SLOT_ROWS; row++) {
+        if (!nvm_trace_erase_row(slot_base(slot) + row * NVM_ROW_SIZE)) return 0;
+    }
 
     /* Program the chronological ring contents, one complete 64-byte page
      * at a time. Unused tail bytes remain erased (0xFF). */
@@ -131,13 +133,16 @@ int trace_save(void)
                 ((uint8_t *)page)[j] = (uint8_t)record_byte(offset, first);
             }
         }
-        nvm_trace_write(slot_base(slot) + TRACE_STORE_HEADER_SIZE
-                        + page_no * NVM_PAGE_SIZE, page, 16u);
+        if (!nvm_trace_write(slot_base(slot) + TRACE_STORE_HEADER_SIZE
+                             + page_no * NVM_PAGE_SIZE, page, 16u)) return 0;
     }
 
     /* Verify the programmed data before making the slot visible. */
-    if (readback_crc(slot_base(slot) + TRACE_STORE_HEADER_SIZE, total_bytes) != crc)
-        return 0;
+    {
+        uint32_t verify_crc;
+        if (!readback_crc(slot_base(slot) + TRACE_STORE_HEADER_SIZE, total_bytes, &verify_crc)
+            || verify_crc != crc) return 0;
+    }
 
     /* Commit marker/header is last. Header CRC excludes word 12 itself. */
     for (i = 0; i < 16; i++) header[i] = 0xFFFFFFFFu;
@@ -154,7 +159,7 @@ int trace_save(void)
     header[10] = g_trace.start_us;
     header[11] = crc;
     header[12] = crc32_bytes((const uint8_t *)header, 12u * sizeof(uint32_t));
-    nvm_trace_write(slot_base(slot), header, 16u);
+    if (!nvm_trace_write(slot_base(slot), header, 16u)) return 0;
     {
         uint32_t verify[16];
         if (!read_header(slot, verify) || verify[2] != sequence
