@@ -557,6 +557,7 @@ class MainWindow(QMainWindow):
         action_row.setSpacing(12)
 
         backup_group = QGroupBox()
+        self.lens_group = backup_group
         backup_actions = QGridLayout(backup_group)
         backup_actions.setSpacing(4)
         self.backup_btn = QPushButton()
@@ -577,6 +578,7 @@ class MainWindow(QMainWindow):
         backup_actions.addWidget(self.write_lens_btn, 2, 0, 1, 2)
 
         device_group = QGroupBox()
+        self.firmware_group = device_group
         device_actions = QVBoxLayout(device_group)
         device_actions.setSpacing(4)
         self.restore_btn = QPushButton()
@@ -761,6 +763,8 @@ class MainWindow(QMainWindow):
         )
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
+        self.lens_group.setTitle(self._t("Lens Configuration", "镜头配置管理"))
+        self.firmware_group.setTitle(self._t("Device & Firmware", "设备与固件管理"))
         self.backup_btn.setText(self._t("Read and back up current firmware", "读取并备份当前固件"))
         self.load_lens_btn.setText(self._t("Open lens configuration file", "打开镜头配置文件"))
         self.save_lens_btn.setText(self._t("Save lens configuration file", "保存镜头配置文件"))
@@ -893,6 +897,7 @@ class MainWindow(QMainWindow):
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
             self.write_btn.setEnabled(True)
+            self.write_lens_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
@@ -1078,12 +1083,12 @@ class MainWindow(QMainWindow):
             "The project TRACE firmware will be flashed with these lens settings:\\n\\n"
             + "\\n".join(lines)
             + f"\\n\\nPatched image: {len(patched)} bytes\\nSHA-256: {digest}\\n"
-            + "The application image is verified by readback. The separate TRACE log region is not touched.\\n"
+            + "The bootloader accepts sequential application-image writes, so this operation rewrites the TRACE application image with the new lens block. It does not write the bootloader or TRACE log region. Readback verification follows.\\n"
             + "Make a full 128 KiB backup first. Continue?",
             "即将把以下镜头参数写入项目 TRACE 固件并烧录：\\n\\n"
             + "\\n".join(lines)
             + f"\\n\\n配置后镜像：{len(patched)} 字节\\nSHA-256：{digest}\\n"
-            + "烧录后将逐字节回读校验应用区；独立 TRACE 日志区不会触碰。\\n"
+            + "EA9 引导程序只支持连续写入应用镜像，因此本操作会将包含新镜头配置的 TRACE 应用镜像整体写入；不会写入引导区或 TRACE 日志区，完成后会回读校验。\\n"
             + "请先完成 128 KiB 完整 Flash 备份。确认继续？"
         )
         if QMessageBox.question(self, self.windowTitle(), prompt,
@@ -1168,6 +1173,7 @@ class MainWindow(QMainWindow):
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
         self.write_btn.setEnabled(False)
+        self.write_lens_btn.setEnabled(False)
         self.bar.setValue(0)
         self.restore_worker = RestoreWorker(
             self.seen_path, backup_path, self.declare_ver, self.zh
@@ -1185,6 +1191,7 @@ class MainWindow(QMainWindow):
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
             self.write_btn.setEnabled(True)
+            self.write_lens_btn.setEnabled(True)
         if ok:
             self.bar.setValue(100)
             self.device_lbl.setText(self._t(
