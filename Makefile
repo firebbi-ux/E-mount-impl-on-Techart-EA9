@@ -167,7 +167,11 @@ else
 	    $(TOOLCHAIN)nm $(TARGET).elf | grep -E ' (diag_|trail_|nvm_log_)'; \
 	    exit 1; \
 	 fi
-	@echo "  verified: no diag_*/trail_*/nvm_log_* symbol -- the image writes no log"
+	@if [ "$(BUILD)" = trace ]; then \
+	    echo "  verified: diagnostic LOG writer absent; TRACE-only writer is separately bounded"; \
+	 else \
+	    echo "  verified: no diag_*/trail_*/nvm_log_* symbol -- no LOG writes"; \
+	 fi
 endif
 	@echo "  source id: $$(cat src/*.c src/*.h | md5sum | cut -c1-6)"
 
