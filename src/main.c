@@ -1765,7 +1765,9 @@ static void focus_scan(const struct em_focus_cmd *c)
 		focus_drive_end(outcome);       /* a Drive took the leg over */
 		return;
 	}
-	if (outcome == SERVO_ABORTED || g_next_pending) {
+	if (outcome != SERVO_OK || g_next_pending) {
+		/* Do not launch a sweep from an approach leg that stalled,
+		 * timed out, ran away, or otherwise failed to arrive. */
 		em_set_scan_state(EM_SCAN_IDLE);
 		focus_report_cut(EM_OP_SCAN, 0);
 		return;
@@ -1783,7 +1785,9 @@ static void focus_scan(const struct em_focus_cmd *c)
 		return;
 	}
 
-	if (outcome == SERVO_ABORTED) {
+	if (outcome != SERVO_OK) {
+		/* A failed sweep is not a completed Scan.  In particular, never
+		 * send 0x30 / 1F 00 for a stalled or timed-out servo leg. */
 		em_set_scan_state(EM_SCAN_IDLE);
 		focus_report_cut(EM_OP_SCAN, 0);
 		return;

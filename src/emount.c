@@ -1910,6 +1910,16 @@ static int32_t forecast06(int32_t left, int8_t m)
 	    || (int32_t)g_frame_disp * dir < 0) {
 		return 0;
 	}
+	/* A commanded move is not evidence that the mechanism has started.
+	 * Until either the last-eighth velocity estimate or the whole-frame
+	 * displacement is nonzero, the encoder has not observed breakaway.
+	 * Do not publish the model's full-duty acceleration as real travel:
+	 * the body uses this one-frame-ahead value to associate AF samples
+	 * with focus positions.  em_reach() deliberately keeps its from-rest
+	 * model; this guard is only for the measured status forecast. */
+	if (g_v0_q8 == 0 && g_frame_disp == 0) {
+		return 0;
+	}
 	x = reach_q8((uint32_t)(g_v0_q8 * dir),
 	             (uint32_t)em_frame_period_ms * EM06_FORECAST_FRAMES);
 	if (x > room) {

@@ -1720,12 +1720,10 @@ int main(void)
 			fail("at rest pl[20..21] %u pl[2..3] %u, want 5000 5000",
 			     POS(0x1A), POS(0x08));
 		}
-		/* Running, starting from rest (no eighths sampled, so no speed):
-		 * the latch plus the bound -- the starting acceleration 11.4/26
-		 * units/ms^2 held up to the 6.25 cap, 17 ms: 6.25*17 - 6.25^2 *
-		 * 26 / (2 * 11.4) = 61.8 -- against about 52 the plant really
-		 * covers.  Not the last frame's +40 at constant speed, which is
-		 * what falls behind while the mechanism accelerates. */
+		/* A motor command alone is not measured motion.  With no encoder
+		 * displacement in either the last eighth or the whole frame, the
+		 * status forecast must stay at the latched position rather than
+		 * inventing the full-duty acceleration before breakaway. */
 		em_set_forecast_model(6250u, 11431u, 26u);
 		em_frame_period_ms = 17u;
 		em_set_motor(1);
@@ -1733,8 +1731,8 @@ int main(void)
 		em_sample_position(5040);
 		em_set_focus_position(5050, 5300);
 		before = sent_n; em_poll(); f = sent[before + 1];
-		if (POS(0x1A) != 5040 || POS(0x08) != 5040 + 62) {
-			fail("from rest pl[20..21] %u pl[2..3] %u, want 5040 5102",
+		if (POS(0x1A) != 5040 || POS(0x08) != 5040) {
+			fail("pre-breakaway pl[20..21] %u pl[2..3] %u, want 5040 5040",
 			     POS(0x1A), POS(0x08));
 		}
 		host_frame_sync();
