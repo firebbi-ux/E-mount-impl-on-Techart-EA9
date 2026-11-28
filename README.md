@@ -421,7 +421,7 @@ substitute for preserving the full-flash backup.
 decode its valid, CRC-checked snapshots to CSV:
 
 ```bash
-python3 tools/ea9flash.py --dump 0x16000:0x6000 -o ea9-trace-region.bin
+python3 tools/mac_updater/ea9_dump.py --range 0x16000:0x6000 -o ea9-trace-region.bin
 python3 tools/mac_updater/ea9_trace_decode.py ea9-trace-region.bin -o ea9-trace.csv
 ```
 
