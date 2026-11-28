@@ -36,6 +36,7 @@ void trace_begin(int32_t pos,int32_t target,uint8_t outcome)
  g_trace.next_sample_us=g_trace.start_us+TRACE_SAMPLE_US;
  g_trace.events_ahead=0; g_trace.event_queued=0; g_trace.event_sent=0;
  trace_put(TRACE_BEGIN,outcome,pos);
+ trace_put(TRACE_TARGET,0,(int32_t)target);
  g_trace.active=1;
 }
 void trace_new_command(void)
