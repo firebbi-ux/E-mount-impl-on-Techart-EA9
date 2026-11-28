@@ -41,6 +41,7 @@
 #include "clock.h"
 #include "delay.h"
 #include "emount.h"
+#include "trace.h"
 #include "diag.h"
 #include "emount_packets.h"
 #include "em_uart.h"
@@ -2053,6 +2054,9 @@ void em_post_event(uint8_t code, uint8_t param)
 		g_event_code[g_event_n]  = code;
 		g_event_param[g_event_n] = param;
 		g_event_n++;
+		if (code == EM_REC_MOVE && param == 0x00u) {
+			trace_event_queued((uint8_t)(g_event_n - 1u));
+		}
 	}
 }
 
@@ -2405,6 +2409,9 @@ void em_pump_status(void)
 		sent_ans = k;
 
 		em_transmit(em_msg_06, len);
+		if (g_event_n) {
+			trace_event_tx(g_event_code[0], g_event_param[0]);
+		}
 
 		/* Shift the event queue AFTER the frame has gone: whatever is
 		 * behind it waits for the next one. */

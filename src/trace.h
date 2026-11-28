@@ -18,23 +18,22 @@ struct trace_buffer {
  struct trace_record records[TRACE_CAPACITY];
  uint32_t write_count, dropped, session, start_us, next_sample_us;
  int32_t target;
- uint16_t event_base;
- uint8_t active, event_queued, event_sent, reserved;
+ uint8_t events_ahead, active, event_queued, event_sent;
 };
 extern struct trace_buffer g_trace;
 void trace_init(void);
-void trace_begin(int32_t pos, int32_t target, uint8_t outcome, uint16_t events_sent);
+void trace_begin(int32_t pos, int32_t target, uint8_t outcome);
 void trace_new_command(void);
-void trace_event_queued(void);
-void trace_event_tx(uint16_t events_sent);
+void trace_event_queued(uint8_t events_ahead);
+void trace_event_tx(uint8_t code, uint8_t param);
 void trace_service(void);
 #else
 static inline void trace_init(void) {}
-static inline void trace_begin(int32_t p,int32_t t,uint8_t o,uint16_t e)
-{(void)p;(void)t;(void)o;(void)e;}
+static inline void trace_begin(int32_t p,int32_t t,uint8_t o)
+{(void)p;(void)t;(void)o;}
 static inline void trace_new_command(void) {}
-static inline void trace_event_queued(void) {}
-static inline void trace_event_tx(uint16_t e) {(void)e;}
+static inline void trace_event_queued(uint8_t n) {(void)n;}
+static inline void trace_event_tx(uint8_t c,uint8_t p) {(void)c;(void)p;}
 static inline void trace_service(void) {}
 #endif
 #endif

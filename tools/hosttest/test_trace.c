@@ -10,12 +10,12 @@ static void check(int ok,const char *s){if(!ok){fprintf(stderr,"FAIL: %s\n",s);e
 int main(void)
 {
  unsigned i,samples=0;
- trace_init(); trace_begin(100,200,0,7);
+ trace_init(); trace_begin(100,200,0);
  check(g_trace.active,"begin activates trace");
  check(g_trace.records[0].kind==TRACE_BEGIN,"begin marker");
- trace_event_queued();
+ trace_event_queued(0);
  check(g_trace.records[1].kind==TRACE_EVENT_QUEUED,"queue marker");
- trace_event_tx(8);
+ trace_event_tx(0x1Du,0x00u);
  check(g_trace.records[2].kind==TRACE_EVENT_SENT,"transmit marker");
  check(g_trace.target==200,"commanded target retained");
  now_us=3000; trace_service(); check(g_trace.write_count==3,"no early sample");
@@ -25,7 +25,7 @@ int main(void)
   if(g_trace.records[i].kind==TRACE_SAMPLE)samples++;
  check(samples>=190 && samples<=200,"approximately 5 ms sample cadence");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_FINISHED,"finished marker");
- trace_begin(10,20,0,9); trace_new_command();
+ trace_begin(10,20,0); trace_new_command();
  check(!g_trace.active,"new command cancels observation");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_CANCELLED,"cancel marker");
  puts("PASS: trace ring, sampling window, markers, cancellation");

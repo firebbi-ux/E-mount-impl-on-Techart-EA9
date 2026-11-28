@@ -1527,7 +1527,7 @@ static uint8_t focus_run(int32_t want, uint16_t target_u,
 	delta = want - here;
 
 	if (delta > -FOCUS_DEADBAND_COUNTS && delta < FOCUS_DEADBAND_COUNTS) {
-		trace_begin(here, want, SERVO_OK, em_events_sent);
+		trace_begin(here, want, SERVO_OK);
 		/* "A target equal to the current position still counts as
 		 * completed, and is reported as such" (autofocus.md 3.1 rule
 		 * 5).  A body waiting for an acknowledgement must not be left
@@ -1544,7 +1544,7 @@ static uint8_t focus_run(int32_t want, uint16_t target_u,
 	g_absorb_pending = 0;   /* a takeover belongs to the leg it arrived in */
 	forecast_model(cfg);
 	servo_move_rel(delta, cfg, &r);
-	trace_begin(r.end, want, r.outcome, em_events_sent);
+	trace_begin(r.end, want, r.outcome);
 	g_moving      = 0;
 	focus_report();
 
@@ -1954,7 +1954,6 @@ static void focus_exec(const struct em_focus_cmd *c)
 		/* A 0x34 move is answered by its own reply, not by 1D 00;
 		 * the leg's last instruction decides (focus_retarget). */
 		em_post_event(EM_REC_MOVE, 0x00u);
-		trace_event_queued();
 	}
 }
 
@@ -2071,7 +2070,6 @@ int main(void)
 
 	for (;;) {
 		em_poll();
-		trace_event_tx(em_events_sent);
 		m34_deadline();
 
 		/* If the handshake has not completed by two seconds it is not
