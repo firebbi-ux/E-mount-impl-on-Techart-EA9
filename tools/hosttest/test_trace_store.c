@@ -86,6 +86,8 @@ int main(void)
           "record data is programmed before the header");
     check(last_write_addr == NVM_LOG_BASE,
           "CRC-protected header is the final flash program");
+    check(!trace_save(), "unchanged ring is not written a second time");
+    check(erase_calls == 24u, "duplicate save does not erase another slot");
     h = header(0);
     count = h[3];
     bytes = count * sizeof(struct trace_record);
