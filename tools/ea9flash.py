@@ -266,11 +266,12 @@ def transfer_length(image_len):
 
 
 def verify_image(dev, image, base=APP_BASE, progress=True):
-    """Read the application back through READ and compare it byte-for-byte."""
-    for offset in range(0, len(image), CHUNK):
+    """Verify the full byte stream written, including zero-padded final chunks."""
+    total = transfer_length(len(image))
+    for offset in range(0, total, CHUNK):
         actual = dev.read_at(base + offset)
-        expected = image[offset:offset + CHUNK]
-        if actual[:len(expected)] != expected:
+        expected = image[offset:offset + CHUNK].ljust(CHUNK, b"\x00")
+        if actual != expected:
             for i, (a, e) in enumerate(zip(actual, expected)):
                 if a != e:
                     raise IOError(
@@ -279,12 +280,14 @@ def verify_image(dev, image, base=APP_BASE, progress=True):
                     )
             raise IOError("short readback at flash 0x%08x" % (base + offset))
         if progress and (offset + CHUNK) % 4096 == 0:
-            print("  verified %d/%d bytes" % (min(offset + CHUNK, len(image)), len(image)))
+            print("  verified %d/%d bytes" % (offset + CHUNK, total))
     if progress:
-        print("  readback matches all %d image bytes" % len(image))
+        print("  readback matches all %d written bytes" % total)
 
 
 def flash(dev, image, declare=None, progress=True):
+    if not image:
+        raise ValueError("firmware image is empty")
     written = transfer_length(len(image))
     if APP_BASE + written > APP_SAFE_END:
         raise ValueError(
