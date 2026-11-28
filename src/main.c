@@ -863,6 +863,11 @@ static void powerdown_signal(void)
 	/* Let the acknowledgement finish on the wire before the UART goes. */
 	delay_ms(50);
 
+	/* The body has acknowledged shutdown and is polling RXD for the low
+	 * transition below. The motor is already parked; persist TRACE here,
+	 * outside every focus/servo path and before TX is taken low. */
+	trace_save();
+
 	/* MEASURED, and load-bearing: switching the USART off is the only
 	 * difference between an image that boots normally and one that stalls
 	 * on the next power-on -- a clean single-variable A/B on the a9 II
