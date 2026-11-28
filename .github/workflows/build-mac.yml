@@ -91,5 +91,5 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Community-EA9-Updater-v2.4.0-XPD0.5-macOS-${{ matrix.arch_name }}
+          name: EA9-Project-TRACE-Flasher-macOS-${{ matrix.arch_name }}
           path: out_dmg/*.dmg

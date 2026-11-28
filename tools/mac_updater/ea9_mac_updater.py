@@ -429,14 +429,14 @@ class MainWindow(QMainWindow):
             self.trace_sha256 = hashlib.sha256(self.base_image).hexdigest()
         except Exception as e:
             self.base_image = None
-            self.status_lbl.setText(f"无法读取内置固件 ea9.bin：{e}")
+            self.status_lbl.setText(f"无法读取内置 TRACE 固件 ea9-rebuild-trace.bin：{e}")
 
         self.apply_text()
+        self.update_mode()
         for widget in (self.hw_lbl, self.hw_combo, self.hw_help, self.mode_lbl,
                        self.multi_radio, self.single_radio, self.focal_help,
                        self.single_box, self.multi_box, self.slot_xpd_help):
             widget.hide()
-        self.update_mode()
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll_usb)
         self.poll_timer.start(2000)
@@ -548,16 +548,14 @@ class MainWindow(QMainWindow):
 
     def apply_text(self):
         v = self.declare_ver
-        self.setWindowTitle(
-            self._t(
-                f"Community EA9 Mac Firmware Updater: v{v[0]}.{v[1]}.{v[2]} (0.5mm XPD Mod)",
-                f"Community EA9 固件更新工具 (Mac)：v{v[0]}.{v[1]}.{v[2]} (0.5mm XPD Mod)",
-            )
-        )
+        self.setWindowTitle(self._t(
+            "EA9 Project TRACE Firmware Flasher",
+            "EA9 项目 TRACE 测试固件烧录工具"
+        ))
         self.notes_lbl.setText(self._t("Release notes", "更新说明"))
         self.notes_box.setPlainText(self._t(
-            "PROJECT TRACE TEST FIRMWARE\\nThis app flashes the project-built TRACE image (bootloader declaration 2.4.1).\\nPersistent lens configuration and the separate TRACE log region are not rewritten.",
-            "项目 TRACE 测试固件\\n本程序写入我们自行编译的 TRACE 镜像（引导程序声明版本 2.4.1）。\\n不会重写持久化镜头配置区，也不会覆盖独立的 TRACE 日志区。"
+            "PROJECT TRACE TEST FIRMWARE\\nThis app flashes the project-built TRACE image (bootloader declaration 2.4.1).\\nPersistent lens configuration and the separate TRACE log region are not rewritten.\\nSHA-256: " + str(self.trace_sha256),
+            "项目 TRACE 测试固件\\n本程序写入我们自行编译的 TRACE 镜像（引导程序声明版本 2.4.1）。\\n不会重写持久化镜头配置区，也不会覆盖独立的 TRACE 日志区。\\nSHA-256：" + str(self.trace_sha256)
         ))
         self.hw_lbl.setText(self._t("TRACE image:", "TRACE 固件："))
         how = self._t("How to choose?", "如何选择？")
