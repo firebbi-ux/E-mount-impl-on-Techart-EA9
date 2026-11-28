@@ -301,6 +301,9 @@ static void focus_hist_page(uint32_t page);
 static uint8_t g_moving;
 static int32_t g_move_target;
 static int8_t  g_move_dir;
+/* Scan phase 0x20 is emitted only after the encoder confirms sweep motion. */
+static int32_t g_scan_sweep_start;
+static uint8_t g_scan_wait_motion;
 /* The running Move leg owes no 1D 00: it is a message 0x34 move, or its 0x04
  * Move was taken over by one and has been answered already (focus_retarget). */
 static uint8_t g_leg_silent;
@@ -571,6 +574,13 @@ static void pump(int32_t pos)
 	 * so the mapping has no anchor and the value would be meaningless. */
 	if (g_homed) {
 		focus_report_at(pos);
+	}
+	/* 0x10 means accepted; 0x20 means the sweep is physically underway.
+	 * Do not announce the latter while the motor is still breaking away. */
+	if (g_scan_wait_motion && g_moving
+	    && (pos - g_scan_sweep_start) * g_move_dir >= 8) {
+		g_scan_wait_motion = 0;
+		em_scan_sweeping();
 	}
 	em_poll();
 	m34_deadline();
@@ -1382,6 +1392,7 @@ static uint8_t focus_drive_absorb(const struct em_focus_cmd *c)
 		return 0;
 	}
 	if (g_last_op == EM_OP_SCAN) {
+		g_scan_wait_motion = 0;
 		em_set_scan_state(EM_SCAN_IDLE);
 		em_post_event(EM_REC_SCAN, 0x00u);
 	} else {
@@ -1658,7 +1669,7 @@ static void focus_report_cut(uint8_t running, uint8_t drive_param)
 static void focus_scan(const struct em_focus_cmd *c)
 {
 	int32_t first, second, dir, start, finish, v, runup, runout;
-	uint8_t outcome;
+	uint8_t outcome, scan_started;
 
 	/* The sweep speed.  The speed code is a distance PER BODY FRAME
 	 * (Yongnuo 50 DF FUN_0800a3f0): rec[4] & 0x7F units, in defocus units
@@ -1787,18 +1798,22 @@ static void focus_scan(const struct em_focus_cmd *c)
 	 * early, inside the run-out -- so it stops at the target instead of
 	 * overrunning it into the close-focus stop. */
 	em_scan_launch();
+	g_scan_sweep_start = abs_encoder_track();
+	g_scan_wait_motion = 1;
 	g_live_cfg          = STOCK;
 	g_live_cfg.v_cruise = v;
 	g_live_cfg.boost_up = SCAN_BOOST_UP;
 	g_live_cfg.boost_max = SCAN_BOOST_MAX;
 	outcome = focus_run(finish, focus_counts_to_em06(finish), &g_live_cfg);
+	scan_started = (uint8_t)!g_scan_wait_motion;
+	g_scan_wait_motion = 0;
 	if (g_last_op == EM_OP_DRIVE) {
 		focus_drive_end(outcome);       /* a Drive took the sweep over */
 		return;
 	}
 
-	if (outcome != SERVO_OK) {
-		/* A failed sweep is not a completed Scan.  In particular, never
+	if (outcome != SERVO_OK || !scan_started) {
+		/* A failed or motionless sweep is not a completed Scan.  In particular, never
 		 * send 0x30 / 1F 00 for a stalled or timed-out servo leg. */
 		em_set_scan_state(EM_SCAN_IDLE);
 		focus_report_cut(EM_OP_SCAN, 0);

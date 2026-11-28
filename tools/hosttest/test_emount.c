@@ -1649,6 +1649,9 @@ int main(void)
 		 * read off the frames actually sent. */
 		em_scan_launch();
 		for (k = 0; k < sizeof(WANT); k++) {
+			if (k == 1) {
+				em_scan_sweeping(); /* only after motion is observed */
+			}
 			if (k == 3) {
 				em_scan_finish();
 			}

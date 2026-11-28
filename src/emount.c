@@ -2044,7 +2044,12 @@ void em_set_scan_state(uint8_t state)
 
 void em_scan_launch(void)
 {
+	/* Acceptance is distinct from the physical start of the sweep. */
 	scan_push(EM_SCAN_ACCEPTED);
+}
+
+void em_scan_sweeping(void)
+{
 	scan_push(EM_SCAN_SWEEPING);
 }
 

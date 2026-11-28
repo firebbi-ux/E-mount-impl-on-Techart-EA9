@@ -257,8 +257,11 @@ void em_set_min_focus(uint16_t code);
  * Yongnuo does whenever a new instruction other than the sweep leg starts. */
 void em_set_scan_state(uint8_t state);
 
-/* The sweep leg has started: 0x10 for one frame, then 0x20. */
+/* The Scan was accepted: queue 0x10. */
 void em_scan_launch(void);
+
+/* The encoder has confirmed physical sweep motion: queue 0x20. */
+void em_scan_sweeping(void);
 
 /* The sweep leg has ended: 0x30 for one frame, then 0x00, then -- five frames
  * on -- the 1F 00 event.  The caller posts no event of its own. */
