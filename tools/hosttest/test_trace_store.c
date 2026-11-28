@@ -99,7 +99,7 @@ int main(void)
     h = header(0);
     count = h[3];
     bytes = count * sizeof(struct trace_record);
-    check(h[0] == 0x45545243u && h[1] == 1u, "header magic/version");
+    check(h[0] == 0x45545243u && h[1] == 2u, "header magic/version");
     check(h[2] == 1u && count == 80u, "first slot sequence and capped count");
     check(h[12] == crc32((const uint8_t *)h, 12u * sizeof(uint32_t)), "header CRC");
     data = flash_image + 64u;
