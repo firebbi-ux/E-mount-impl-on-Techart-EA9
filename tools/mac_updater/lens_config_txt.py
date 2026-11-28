@@ -2,7 +2,9 @@
 import re
 import cfgblock
 
-FLASH_CONFIG_OFFSET = 0xB7D0
+FLASH_APP_START = 0x5000
+FLASH_APP_END = 0x16000
+PREFERRED_HW_VERSION = 2
 SLOT_APERTURES = ("f/2.5", "f/2.8", "f/3.2", "f/3.5",
                   "f/4.0", "f/4.5", "f/5.0", "f/5.6")
 FIELDS = ("槽位号", "焦距", "镜头名称", "出瞳距离")
@@ -99,15 +101,51 @@ def parse_txt(text):
     return _validate_slots(slots, allow_empty=True)
 
 
-def slots_from_flash(flash):
+def slots_from_flash(flash, preferred_hw_version=PREFERRED_HW_VERSION):
+    """Extract the valid lens block from the application area of a full-flash dump.
+
+    A device backup can contain more than one historical CfgAnchor block.
+    Validate each candidate structurally and against the optical-file generator,
+    then prefer the selected firmware hardware version (v2 by default).
+    Never scan the bootloader or TRACE log region.
+    """
     if len(flash) != 0x20000:
         raise ValueError("完整 Flash 备份必须为 128 KiB")
-    start = FLASH_CONFIG_OFFSET
-    block = flash[start:start + cfgblock.SIZE]
-    if len(block) != cfgblock.SIZE or not block.startswith(cfgblock.MAGIC):
-        raise ValueError("固定镜头配置区 0x%05X 未找到有效配置；未对全盘搜索" % start)
-    try:
-        _, slots = cfgblock.parse(block)
-    except SystemExit as error:
-        raise ValueError("固定镜头配置区校验失败：%s" % error)
-    return _validate_slots(slots)
+
+    candidates = []
+    search_at = FLASH_APP_START
+    while True:
+        at = flash.find(cfgblock.MAGIC, search_at, FLASH_APP_END)
+        if at < 0:
+            break
+        search_at = at + 1
+        if at + cfgblock.SIZE > FLASH_APP_END:
+            continue
+        block = flash[at:at + cfgblock.SIZE]
+        try:
+            hw, slots = cfgblock.parse(block)
+            slots = _validate_slots(slots)
+        except (SystemExit, ValueError, UnicodeError) as error:
+            continue
+        candidates.append((at, hw, slots))
+
+    if not candidates:
+        raise ValueError(
+            "应用区 0x%05X..0x%05X 未找到通过完整校验的镜头配置块"
+            % (FLASH_APP_START, FLASH_APP_END)
+        )
+
+    preferred = [item for item in candidates if item[1] == preferred_hw_version]
+    if len(preferred) == 1:
+        return preferred[0][2]
+    if len(preferred) > 1:
+        offsets = ", ".join("0x%05X" % item[0] for item in preferred)
+        raise ValueError(
+            "应用区存在多个硬件版本 %d 的有效镜头配置块：%s"
+            % (preferred_hw_version, offsets)
+        )
+    if len(candidates) == 1:
+        return candidates[0][2]
+
+    details = ", ".join("0x%05X(v%d)" % (at, hw) for at, hw, _ in candidates)
+    raise ValueError("发现多个有效镜头配置块，无法确定当前配置：" + details)
