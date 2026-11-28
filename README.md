@@ -372,7 +372,17 @@ sudo udevadm control --reload-rules
 
 Then replug the adapter.
 
-**Back up the complete flash before an experimental write** — this is read-only:
+**Back up the complete flash before an experimental write** — this is read-only.
+On macOS, install the small HID dependency once and run:
+
+```bash
+python3 -m pip install hidapi
+python3 tools/mac_updater/ea9_dump.py -o ea9-full-flash-backup.bin
+shasum -a 256 ea9-full-flash-backup.bin
+```
+
+The macOS backup tool reads `0x00000–0x1FFFF` (128 KiB) using READ only;
+it never sends START or DATA. On Linux, the equivalent is:
 
 ```bash
 python3 tools/ea9flash.py --dump 0x0:0x20000 -o ea9-full-flash-backup.bin
