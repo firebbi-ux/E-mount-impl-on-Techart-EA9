@@ -9,6 +9,8 @@
 static uint32_t now_us;
 static int32_t position;
 static uint8_t flash_image[NVM_LOG_END - NVM_LOG_BASE];
+static unsigned erase_calls, write_calls;
+static uint32_t first_write_addr, last_write_addr;
 
 uint32_t micros(void) { return now_us; }
 int32_t abs_encoder_track(void) { return position; }
@@ -18,6 +20,7 @@ void nvm_trace_erase_row(uint32_t address)
     uint32_t offset = address - NVM_LOG_BASE;
     if (address % NVM_ROW_SIZE || offset + NVM_ROW_SIZE > sizeof(flash_image)) abort();
     memset(flash_image + offset, 0xFF, NVM_ROW_SIZE);
+    erase_calls++;
 }
 
 void nvm_trace_read(uint32_t address, uint32_t *words, uint32_t count)
@@ -31,6 +34,9 @@ void nvm_trace_write(uint32_t address, const uint32_t *words, uint32_t count)
 {
     uint32_t offset = address - NVM_LOG_BASE, i;
     const uint8_t *src = (const uint8_t *)words;
+    if (write_calls == 0u) first_write_addr = address;
+    last_write_addr = address;
+    write_calls++;
     if (address % NVM_PAGE_SIZE || count != 16u
         || offset + NVM_PAGE_SIZE > sizeof(flash_image)) abort();
     for (i = 0; i < NVM_PAGE_SIZE; i++) flash_image[offset + i] &= src[i];
@@ -74,6 +80,12 @@ int main(void)
     }
     check(g_trace.retained_count == TRACE_CAPACITY, "ring fills before snapshot");
     check(trace_save(), "first snapshot committed");
+    check(erase_calls == 24u, "one save erases exactly one 6 KiB slot");
+    check(write_calls == 49u, "full ring writes 48 data pages plus one header");
+    check(first_write_addr == NVM_LOG_BASE + 64u,
+          "record data is programmed before the header");
+    check(last_write_addr == NVM_LOG_BASE,
+          "CRC-protected header is the final flash program");
     h = header(0);
     count = h[3];
     bytes = count * sizeof(struct trace_record);
