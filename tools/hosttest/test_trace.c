@@ -16,12 +16,15 @@ int main(void)
  check(g_trace.retained_count==1,"retained record count starts at one");
  check(g_trace.session_first==0,"session start sequence retained");
  check(g_trace.records[0].kind==TRACE_BEGIN,"begin marker");
+ check(g_trace.records[0].pos==100,"begin position retained");
+ check(g_trace.records[1].kind==TRACE_TARGET,"target marker");
+ check(g_trace.records[1].pos==200,"target position retained per session");
  trace_event_queued(0);
- check(g_trace.records[1].kind==TRACE_EVENT_QUEUED,"queue marker");
+ check(g_trace.records[2].kind==TRACE_EVENT_QUEUED,"queue marker");
  trace_event_tx(EM_REC_MOVE,0x00u);
- check(g_trace.records[2].kind==TRACE_EVENT_SENT,"transmit marker");
+ check(g_trace.records[3].kind==TRACE_EVENT_SENT,"transmit marker");
  check(g_trace.target==200,"commanded target retained");
- now_us=3000; trace_service(); check(g_trace.write_count==3,"no early sample");
+ now_us=3000; trace_service(); check(g_trace.write_count==4,"no early sample");
  for(i=1;i<=200;i++){now_us=i*TRACE_SAMPLE_US;position=100+(int32_t)i;trace_service();}
  check(!g_trace.active,"window ends at one second");
  for(i=0;i<g_trace.write_count && i<TRACE_CAPACITY;i++)
