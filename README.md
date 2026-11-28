@@ -353,8 +353,8 @@ make hosttest
 
 This compiles `src/emount.c` **unmodified** for the host and drives it with
 scripted camera traffic, so what passes here is the code that ships. The servo
-runs against a simulated mechanism with encoder noise. Six suites; all should
-report `0 failure(s)`.
+runs against a simulated mechanism with encoder noise. The suite also checks
+TRACE capture semantics and the USB flasher's readback / boundary safeguards.
 
 ### 4.3 Flash
 
