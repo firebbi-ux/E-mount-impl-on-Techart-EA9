@@ -199,7 +199,7 @@ class FlashWorker(QThread):
                 self.progress.emit(100, verify_msg)
                 for offset in range(0, transfer_bytes, REPORT_LEN):
                     actual = dev.read_at(APP_BASE + offset)
-                    expected = self.image[offset:offset + REPORT_LEN].ljust(REPORT_LEN, b"\\x00")
+                    expected = self.image[offset:offset + REPORT_LEN].ljust(REPORT_LEN, b"\x00")
                     if actual != expected:
                         mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
                         raise IOError(
