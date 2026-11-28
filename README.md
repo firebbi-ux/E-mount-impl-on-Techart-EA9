@@ -344,7 +344,10 @@ writers remain compiled out; the existing CFG writer remains enabled in
 `0x1C000–0x1D000`.
 
 A full 256-record save requires 24 row erases and 48 data-page programs plus
-the header page. This happens only in the post-acknowledgement power-down path,
+the header page. At the SAM D21E17A datasheet maxima (6 ms per row erase,
+2.5 ms per page program), the NVM operations alone are bounded at about
+266.5 ms; CRC/readback and software overhead add to that. This happens only
+in the post-acknowledgement power-down path,
 not during focus, servo, or status-frame processing. The body's documented RXD
 low wait is up to 30 seconds; the save delays the subsequent TX-low transition,
 not the shutdown acknowledgement itself. This timing still requires real
