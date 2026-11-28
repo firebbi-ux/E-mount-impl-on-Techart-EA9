@@ -1,6 +1,6 @@
 /* trace_store.c -- TRACE-only persistent snapshot in the otherwise-unused LOG area.
  *
- * Four independently erasable 6 KiB slots.  A slot's 64-byte header is written
+ * Twenty-four independently erasable 1 KiB slots.  A slot's 64-byte header is written
  * LAST, so an interrupted erase/program never makes a partial snapshot valid.
  * This module is called only from the post-acknowledgement power-down path.
  */
@@ -10,11 +10,12 @@
 #include <stdint.h>
 
 #define TRACE_STORE_MAGIC   0x45545243u /* "CRTE" */
-#define TRACE_STORE_VERSION 1u
-#define TRACE_STORE_SLOTS   4u
+#define TRACE_STORE_VERSION 2u
+#define TRACE_STORE_SLOTS   24u
 #define TRACE_STORE_SLOT_SIZE ((NVM_LOG_END - NVM_LOG_BASE) / TRACE_STORE_SLOTS)
 #define TRACE_STORE_HEADER_SIZE NVM_PAGE_SIZE
-#define TRACE_STORE_DATA_SIZE (TRACE_CAPACITY * sizeof(struct trace_record))
+#define TRACE_STORE_MAX_RECORDS 80u
+#define TRACE_STORE_DATA_SIZE (TRACE_STORE_MAX_RECORDS * sizeof(struct trace_record))
 #define TRACE_STORE_SLOT_ROWS (TRACE_STORE_SLOT_SIZE / NVM_ROW_SIZE)
 
 typedef char trace_record_must_be_12_bytes[(sizeof(struct trace_record) == 12u) ? 1 : -1];
@@ -50,7 +51,7 @@ static int read_header(unsigned slot, uint32_t words[16])
 {
     if (!nvm_trace_read(slot_base(slot), words, 16u)) return 0;
     if (words[0] != TRACE_STORE_MAGIC || words[1] != TRACE_STORE_VERSION
-        || words[2] == 0u || words[3] == 0u || words[3] > TRACE_CAPACITY
+        || words[2] == 0u || words[3] == 0u || words[3] > TRACE_STORE_MAX_RECORDS
         || words[5] != words[3]) return 0;
     return words[12] == crc32_bytes((const uint8_t *)words, 12u * sizeof(uint32_t));
 }
@@ -104,9 +105,10 @@ int trace_save(void)
     unsigned slot, row;
     uint32_t sequence;
 
-    if (count == 0u || count > TRACE_CAPACITY
-        || g_trace.write_count == g_last_saved_write_count) return 0;
+    if (count == 0u || g_trace.write_count == g_last_saved_write_count) return 0;
+    if (count > TRACE_STORE_MAX_RECORDS) count = TRACE_STORE_MAX_RECORDS;
 
+    /* Keep only the newest records: getting a small usable trace is the priority. */
     first = g_trace.write_count - count;
     total_bytes = count * (uint32_t)sizeof(struct trace_record);
     data_pages = (total_bytes + NVM_PAGE_SIZE - 1u) / NVM_PAGE_SIZE;
@@ -118,7 +120,7 @@ int trace_save(void)
 
     find_next_slot(&slot, &sequence);
 
-    /* Erase exactly one 6 KiB slot (24 rows); never touch CFG or bootloader. */
+    /* Erase exactly one 1 KiB slot (4 rows); never touch CFG or bootloader. */
     for (row = 0; row < TRACE_STORE_SLOT_ROWS; row++) {
         if (!nvm_trace_erase_row(slot_base(slot) + row * NVM_ROW_SIZE)) return 0;
     }
@@ -151,7 +153,7 @@ int trace_save(void)
     header[2]  = sequence;
     header[3]  = count;
     header[4]  = g_trace.write_count;
-    header[5]  = g_trace.retained_count;
+    header[5]  = count;
     header[6]  = g_trace.overwritten_count;
     header[7]  = g_trace.dropped;
     header[8]  = g_trace.session;
