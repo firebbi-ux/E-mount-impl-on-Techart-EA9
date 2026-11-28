@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""macOS GUI updater for Community EA9 firmware (0.5 mm XPD step, free range)."""
+"""macOS GUI flasher for the project-built EA9 TRACE test firmware."""
 
 import os
 import re
@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 if getattr(sys, "frozen", False):
     BASE_DIR = sys._MEIPASS
-    EA9_BIN = os.path.join(BASE_DIR, "firmware", "ea9.bin")
+    EA9_BIN = os.path.join(BASE_DIR, "firmware", "ea9-rebuild-trace.bin")
     FW_CS = os.path.join(BASE_DIR, "win_src", "Firmware.cs")
     WIN_DOCS_DIR = os.path.join(BASE_DIR, "win_docs")
     HW_IMG = os.path.join(BASE_DIR, "win_assets", "hw_version.jpg")
@@ -26,7 +26,7 @@ else:
     REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     sys.path.insert(0, os.path.join(REPO_DIR, "tools"))
     sys.path.insert(0, os.path.join(REPO_DIR, "tools", "win_updater"))
-    EA9_BIN = os.path.join(REPO_DIR, "tools", "win_updater", "firmware", "ea9.bin")
+    EA9_BIN = os.path.join(REPO_DIR, "build", "ea9-rebuild-trace.bin")
     FW_CS = os.path.join(REPO_DIR, "tools", "win_updater", "src", "Firmware.cs")
     WIN_DOCS_DIR = os.path.join(REPO_DIR, "tools", "win_updater")
     HW_IMG = os.path.join(REPO_DIR, "tools", "win_updater", "assets", "hw_version.jpg")
@@ -268,7 +268,8 @@ class FlashWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.declare_ver = load_declared_version()
+        self.declare_ver = (2, 4, 1)  # bootloader declaration; camera 0x07 version remains in image
+        self.trace_sha256 = None
         self.zh = True
         self.base_image = None
         self.seen_path = None
@@ -423,12 +424,18 @@ class MainWindow(QMainWindow):
         try:
             with open(EA9_BIN, "rb") as bf:
                 self.base_image = bf.read()
-            cfgblock.find(self.base_image)
+            if not self.base_image or len(self.base_image) > 0x10000:
+                raise ValueError("TRACE image is empty or exceeds the application flash region")
+            self.trace_sha256 = hashlib.sha256(self.base_image).hexdigest()
         except Exception as e:
             self.base_image = None
             self.status_lbl.setText(f"无法读取内置固件 ea9.bin：{e}")
 
         self.apply_text()
+        for widget in (self.hw_lbl, self.hw_combo, self.hw_help, self.mode_lbl,
+                       self.multi_radio, self.single_radio, self.focal_help,
+                       self.single_box, self.multi_box, self.slot_xpd_help):
+            widget.hide()
         self.update_mode()
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll_usb)
@@ -548,8 +555,11 @@ class MainWindow(QMainWindow):
             )
         )
         self.notes_lbl.setText(self._t("Release notes", "更新说明"))
-        self.notes_box.setPlainText(load_changelog(self.zh))
-        self.hw_lbl.setText(self._t("Adapter version:", "转接环版本："))
+        self.notes_box.setPlainText(self._t(
+            "PROJECT TRACE TEST FIRMWARE\\nThis app flashes the project-built TRACE image (bootloader declaration 2.4.1).\\nPersistent lens configuration and the separate TRACE log region are not rewritten.",
+            "项目 TRACE 测试固件\\n本程序写入我们自行编译的 TRACE 镜像（引导程序声明版本 2.4.1）。\\n不会重写持久化镜头配置区，也不会覆盖独立的 TRACE 日志区。"
+        ))
+        self.hw_lbl.setText(self._t("TRACE image:", "TRACE 固件："))
         how = self._t("How to choose?", "如何选择？")
         self.hw_help.setText(f'<a href="#">{how}</a>')
         self.focal_help.setText(f'<a href="#">{how}</a>')
@@ -571,7 +581,7 @@ class MainWindow(QMainWindow):
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
         self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
-        self.write_btn.setText(self._t("Write firmware", "写入固件"))
+        self.write_btn.setText(self._t("Flash project TRACE firmware", "烧入项目 TRACE 测试固件"))
         self._refresh_status_text()
 
     def _refresh_status_text(self):
@@ -743,43 +753,25 @@ class MainWindow(QMainWindow):
     def on_write(self):
         if not self.device_ok or not self.seen_path or self.base_image is None:
             return
-        try:
-            hw, slots = self._collect_slots()
-        except ValueError as e:
-            QMessageBox.warning(self, self.windowTitle(), str(e))
-            return
-
-        lines = [self._t(f"Adapter version: {hw}", f"转接环版本：{hw}")]
-        active = [(i, s) for i, s in enumerate(slots) if s[0] > 0]
-        if len(active) == 1:
-            _, (mm, name, xpd) = active[0]
-            lines.append(self._t(
-                f"Single lens: {mm} mm, exit pupil {xpd:g} mm, \"{name}\"",
-                f"单镜头：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
-            ))
-        else:
-            for i, (mm, name, xpd) in active:
-                lines.append(self._t(
-                    f"{SLOT_APERTURES[i]}: {mm} mm, exit pupil {xpd:g} mm, \"{name}\"",
-                    f"{SLOT_APERTURES[i]}：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
-                ))
-
+        digest = self.trace_sha256 or hashlib.sha256(self.base_image).hexdigest()
         prompt = self._t(
-            "The firmware will now be written with:\n\n" + "\n".join(lines) + "\n\nDo not unplug USB until finished.",
-            "即将按以下配置把固件写入转接环：\n\n" + "\n".join(lines) + "\n\n写入完成前，请勿拔下 USB 线！"
+            "You are about to write the PROJECT TRACE TEST FIRMWARE to the EA9 application area (bootloader declaration 2.4.1).\\n\\n"
+            f"Image size: {len(self.base_image)} bytes\\nSHA-256: {digest}\\n\\n"
+            "Persistent lens configuration and the separate TRACE log region are outside this image.\\n"
+            "Make a full-flash backup first if you have not already. Do not unplug USB until readback verification finishes. Continue?",
+            "即将把我们自己的 PROJECT TRACE 测试固件写入 EA9 应用程序区（引导程序声明版本 2.4.1）。\\n\\n"
+            f"镜像大小：{len(self.base_image)} 字节\\nSHA-256：{digest}\\n\\n"
+            "此镜像不包含持久化镜头配置区，也不覆盖独立的 TRACE 日志区。\\n"
+            "如尚未备份，请先执行完整 Flash 备份。写入及回读校验完成前不要拔掉 USB。确认继续？"
         )
-        if QMessageBox.question(self, self.windowTitle(), prompt, QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+        if QMessageBox.question(self, self.windowTitle(), prompt,
+                                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
             return
-
-        block = cfgblock.pack(hw, slots)
-        at = cfgblock.find(self.base_image)
-        patched = bytearray(self.base_image)
-        patched[at:at + cfgblock.SIZE] = block
-
         self.busy = True
         self.write_btn.setEnabled(False)
+        self.backup_btn.setEnabled(False)
         self.bar.setValue(0)
-        self.worker = FlashWorker(self.seen_path, bytes(patched), self.declare_ver, self.zh)
+        self.worker = FlashWorker(self.seen_path, self.base_image, self.declare_ver, self.zh)
         self.worker.progress.connect(lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg)))
         self.worker.finished.connect(self.on_done)
         self.worker.start()

@@ -12,7 +12,36 @@ on:
       - 'tools/win_updater/assets/**'
 
 jobs:
+  build-trace:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install ARM GNU toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-arm-none-eabi binutils-arm-none-eabi make
+      - name: Fetch pinned ASF4 SAMD21 source
+        env:
+          ASF4_COMMIT: d270f79aa16dd8fd4ae3b6c14544283dcb992e9c
+        run: |
+          git clone --no-checkout https://github.com/adafruit/asf4.git .deps/asf4
+          git -C .deps/asf4 checkout --detach "$ASF4_COMMIT"
+          test "$(git -C .deps/asf4 rev-parse HEAD)" = "$ASF4_COMMIT"
+      - name: Build project TRACE firmware
+        run: |
+          make clean
+          make BUILD=trace TOOLCHAIN=arm-none-eabi- ASF4="$PWD/.deps/asf4/samd21"
+          test -s build/ea9-rebuild-trace.bin
+          test "$(stat -c%s build/ea9-rebuild-trace.bin)" -le 65536
+      - name: Upload TRACE firmware for app bundling
+        uses: actions/upload-artifact@v4
+        with:
+          name: ea9-project-trace-firmware
+          path: build/ea9-rebuild-trace.bin
+
   build-mac:
+    needs: build-trace
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +54,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download project TRACE firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: ea9-project-trace-firmware
+          path: build
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -41,17 +76,17 @@ jobs:
           pyinstaller --noconfirm --windowed --name EA9Updater \
             --hidden-import hid \
             --paths tools --paths tools/win_updater \
-            --add-data "tools/win_updater/firmware/ea9.bin:firmware" \
+            --add-data "build/ea9-rebuild-trace.bin:firmware" \
             --add-data "tools/win_updater/src/Firmware.cs:win_src" \
             --add-data "tools/win_updater/changelog.txt:win_docs" \
             --add-data "tools/win_updater/changelog.zh.txt:win_docs" \
             --add-data "tools/win_updater/assets/hw_version.jpg:win_assets" \
             tools/mac_updater/ea9_mac_updater.py
           mkdir -p out_dmg
-          hdiutil create -volname "EA9Updater-v2.4.0-XPD0.5" \
+          hdiutil create -volname "EA9-Project-TRACE" \
             -srcfolder dist/EA9Updater.app \
             -ov -format UDZO \
-            "out_dmg/Community-EA9-Updater-v2.4.0-XPD0.5-macOS-${{ matrix.arch_name }}.dmg"
+            "out_dmg/EA9-Project-TRACE-Flasher-macOS-${{ matrix.arch_name }}.dmg"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
