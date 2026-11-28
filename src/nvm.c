@@ -5,94 +5,103 @@
 #define NVM_CMD_ER   0x02u
 #define NVM_CMD_WP   0x04u
 #define NVM_CMD_PBC  0x44u
+#define NVM_ERROR_MASK (NVMCTRL_STATUS_PROGE | NVMCTRL_STATUS_LOCKE | NVMCTRL_STATUS_NVME)
 
 static void nvm_wait(void)
 {
-	while (!(NVMCTRL->INTFLAG.reg & NVMCTRL_INTFLAG_READY)) {
-	}
+    while (!(NVMCTRL->INTFLAG.reg & NVMCTRL_INTFLAG_READY)) { }
 }
 
-static void nvm_cmd(uint32_t byte_addr, uint32_t cmd)
+static void nvm_clear_errors(void)
 {
-	nvm_wait();
-	NVMCTRL->ADDR.reg  = byte_addr / 2;
-	NVMCTRL->CTRLA.reg = (uint16_t)(NVM_CMDEX | cmd);
-	nvm_wait();
+    /* Both registers are write-one-to-clear. */
+    NVMCTRL->INTFLAG.reg = NVMCTRL_INTFLAG_ERROR;
+    NVMCTRL->STATUS.reg = NVM_ERROR_MASK;
 }
 
-/* [addr, addr + len) inside [lo, hi). */
+static int nvm_has_error(void)
+{
+    return (NVMCTRL->INTFLAG.reg & NVMCTRL_INTFLAG_ERROR) != 0u
+        || (NVMCTRL->STATUS.reg & NVM_ERROR_MASK) != 0u;
+}
+
+static int nvm_cmd(uint32_t byte_addr, uint32_t cmd)
+{
+    nvm_wait();
+    nvm_clear_errors();
+    NVMCTRL->ADDR.reg = byte_addr / 2u;
+    NVMCTRL->CTRLA.reg = (uint16_t)(NVM_CMDEX | cmd);
+    nvm_wait();
+    return !nvm_has_error();
+}
+
+/* [addr, addr + len) inside [lo, hi), with overflow-safe bounds. */
 static int nvm_inside(uint32_t addr, uint32_t len, uint32_t lo, uint32_t hi)
 {
-	return addr >= lo && addr < hi && len <= hi - addr;
+    return addr >= lo && addr < hi && len <= hi - addr;
 }
 
-static void nvm_erase_row(uint32_t addr, uint32_t lo, uint32_t hi)
+static int nvm_erase_row(uint32_t addr, uint32_t lo, uint32_t hi)
 {
-	if (addr % NVM_ROW_SIZE || !nvm_inside(addr, NVM_ROW_SIZE, lo, hi)) {
-		return;
-	}
-	nvm_cmd(addr, NVM_CMD_ER);
+    if ((addr % NVM_ROW_SIZE) != 0u
+        || !nvm_inside(addr, NVM_ROW_SIZE, lo, hi)) return 0;
+    return nvm_cmd(addr, NVM_CMD_ER);
 }
 
-/* Words into ONE page, without disturbing the rest of it: clearing the page
- * buffer sets it to all-ones, and programming only drives bits 1 -> 0, so the
- * words not stored leave the existing flash content alone. */
-static void nvm_write(uint32_t addr, const uint32_t *w, uint32_t words,
-                      uint32_t lo, uint32_t hi)
+/* Program words into one page, preserving untouched bytes. */
+static int nvm_write(uint32_t addr, const uint32_t *w, uint32_t words,
+                     uint32_t lo, uint32_t hi)
 {
-	uint32_t page = addr & ~(NVM_PAGE_SIZE - 1u);
-	uint32_t i;
-
-	if (addr % 4u || words == 0
-	    || addr + words * 4u > page + NVM_PAGE_SIZE
-	    || !nvm_inside(addr, words * 4u, lo, hi)) {
-		return;
-	}
-	nvm_cmd(page, NVM_CMD_PBC);
-	for (i = 0; i < words; i++) {
-		((volatile uint32_t *)addr)[i] = w[i];
-	}
-	nvm_cmd(page, NVM_CMD_WP);
+    uint32_t page, i, bytes;
+    if (w == 0 || words == 0u || words > (NVM_PAGE_SIZE / 4u)) return 0;
+    bytes = words * 4u;
+    page = addr & ~(NVM_PAGE_SIZE - 1u);
+    if ((addr & 3u) != 0u || addr < page
+        || bytes > page + NVM_PAGE_SIZE - addr
+        || !nvm_inside(addr, bytes, lo, hi)) return 0;
+    if (!nvm_cmd(page, NVM_CMD_PBC)) return 0;
+    for (i = 0; i < words; i++) ((volatile uint32_t *)addr)[i] = w[i];
+    return nvm_cmd(page, NVM_CMD_WP);
 }
 
 #ifndef EA9_NO_LOG
 void nvm_log_erase_row(uint32_t addr)
 {
-	nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
+    (void)nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
 }
-
 void nvm_log_write(uint32_t addr, const uint32_t *w, uint32_t words)
 {
-	nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
+    (void)nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
 }
 #endif
 
 #ifdef EA9_TRACE
-__attribute__((noinline, used)) void nvm_trace_erase_row(uint32_t addr)
+__attribute__((noinline, used)) int nvm_trace_erase_row(uint32_t addr)
 {
-	nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
+    return nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
 }
-
-void nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words)
+int nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words)
 {
-	nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
+    return nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
 }
-
-void nvm_trace_read(uint32_t addr, uint32_t *w, uint32_t words)
+int nvm_trace_read(uint32_t addr, uint32_t *w, uint32_t words)
 {
-	uint32_t i;
-	if (addr % 4u || words == 0u
-	    || !nvm_inside(addr, words * 4u, NVM_LOG_BASE, NVM_LOG_END)) return;
-	for (i = 0; i < words; i++) w[i] = ((volatile const uint32_t *)addr)[i];
+    uint32_t i, bytes;
+    if (w == 0 || words == 0u || words > (NVM_LOG_END - NVM_LOG_BASE) / 4u)
+        return 0;
+    bytes = words * 4u;
+    if ((addr & 3u) != 0u || !nvm_inside(addr, bytes, NVM_LOG_BASE, NVM_LOG_END))
+        return 0;
+    for (i = 0; i < words; i++) w[i] = ((volatile const uint32_t *)addr)[i];
+    return 1;
 }
 #endif
 
 void nvm_cfg_erase_row(uint32_t addr)
 {
-	nvm_erase_row(addr, NVM_CFG_BASE, NVM_CFG_END);
+    (void)nvm_erase_row(addr, NVM_CFG_BASE, NVM_CFG_END);
 }
-
 void nvm_cfg_write(uint32_t addr, const uint32_t *w, uint32_t words)
 {
-	nvm_write(addr, w, words, NVM_CFG_BASE, NVM_CFG_END);
+    (void)nvm_write(addr, w, words, NVM_CFG_BASE, NVM_CFG_END);
 }
