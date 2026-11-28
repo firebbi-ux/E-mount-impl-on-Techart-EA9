@@ -6,23 +6,23 @@
 #
 #   make            DEBUG image   -> build/ea9-rebuild.bin
 #   make release    RELEASE image -> build/ea9-rebuild-release.bin
+#   make trace      TRACE investigation image -> build/ea9-rebuild-trace.bin
 #   make hosttest   run the host test suite (emount, servo, no-body,
 #                   init, focus map/distance/prediction)
 #   make clean
 #
-# TWO configurations, and they differ in exactly two things:
+# THREE configurations, deliberately separated by object directory:
 #
-#   | | optimisation | flash trail |
-#   | debug   | -O1 -DDEBUG    | compiled IN  -- diag.c + trail.c    |
-#   | release | -O2 -DEA9_NO_LOG -DNDEBUG | compiled OUT -- not built at all |
+#   | | optimisation | flash logging |
+#   | debug   | -O1 -DDEBUG | diagnostic LOG enabled |
+#   | release | -O2 -DEA9_NO_LOG -DNDEBUG | no LOG writer at all |
+#   | trace   | -O2 -DEA9_NO_LOG -DEA9_TRACE -DNDEBUG | TRACE-only snapshot writer |
 #
-# Why release writes NO LOG to flash: every trail page is an erase/program
-# cycle on a part with a finite number of them.  A bench session's worth is
-# nothing; a camera used for years is not.  So release does not "disable
-# logging at runtime" -- diag.c and trail.c are not in SRCS, the headers
-# replace their interface with inline no-ops (see src/diag.h), nvm.c drops its
-# nvm_log_* writers, and the `all` rule then CHECKS that no diag_*/trail_*/
-# nvm_log_* symbol survived.
+# Release writes no LOG: diagnostic logging is compiled out. TRACE also
+# removes diag.c/trail.c and nvm_log_* but links a separate nvm_trace_* writer
+# whose address checks confine snapshots to the 0x16000-0x1C000 LOG region.
+# The TRACE writer is called only after the shutdown acknowledgement, never
+# from focus/servo/status-frame processing. The map check enforces both facts.
 #
 # Release DOES write configuration (cfg.c, through nvm_cfg_*), confined to its
 # own region at 0x1C000 and written only when a value changes (src/nvm.h).
