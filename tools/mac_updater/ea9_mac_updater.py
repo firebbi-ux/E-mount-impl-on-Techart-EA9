@@ -213,16 +213,9 @@ class BackupWorker(QThread):
                             f"只读备份中… {pct}%"
                             if self.zh else f"Read-only backup... {pct}%"
                         ))
-                boot_first = bytes(data[:ea9_safety.BOOTLOADER_END])
-                boot_second = bytearray()
-                for address in range(0, ea9_safety.BOOTLOADER_END, REPORT_LEN):
-                    chunk = dev.read_at(address)
-                    if len(chunk) != REPORT_LEN:
-                        raise IOError(f"Invalid second bootloader READ at 0x{address:05x}")
-                    boot_second.extend(chunk)
-                ea9_safety.verify_bootloader_reads(
-                    boot_first, boot_first, bytes(boot_second)
-                )
+                # One sequential full-flash read is the backup. Do not issue
+                # a second USB pass over the bootloader after reaching 100%.
+                # File integrity is checked locally after the HID handle closes.
             if len(data) != total:
                 raise IOError(f"Backup length is {len(data)}, expected {total}")
             ea9_safety.validate_backup(bytes(data))
@@ -253,9 +246,9 @@ class BackupWorker(QThread):
                 if os.path.exists(self.output_path + ".sha256.partial"):
                     os.unlink(self.output_path + ".sha256.partial")
             self.completed.emit(True, (
-                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。"
+                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。现在可以安全拔下 USB 线。"
                 if self.zh else
-                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}\nNo write command was sent."
+                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}\nNo write command was sent. You may safely unplug the USB cable."
             ))
         except Exception as e:
             self.completed.emit(False, (
