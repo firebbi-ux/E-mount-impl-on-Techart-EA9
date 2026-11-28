@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'tools/mac_updater/**'
+      - 'src/**'
+      - 'Makefile'
       - 'tools/gen_optical.py'
       - 'tools/win_updater/cfgblock.py'
       - 'tools/win_updater/firmware/ea9.bin'
