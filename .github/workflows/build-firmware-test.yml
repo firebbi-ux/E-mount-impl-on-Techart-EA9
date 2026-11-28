@@ -1,0 +1,31 @@
+name: Test Build EA9 C Firmware
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-fw:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ARM GCC & build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi make python3
+
+      - name: Fetch ASF4 & CMSIS headers
+        run: |
+          git clone --depth 1 https://github.com/adafruit/asf4.git /tmp/asf4
+          if [ ! -f /tmp/asf4/samd21/CMSIS/Include/core_cm0plus.h ]; then
+            git clone --depth 1 https://github.com/ARM-software/CMSIS_5.git /tmp/cmsis5
+            mkdir -p /tmp/asf4/samd21/CMSIS/Include
+            cp -r /tmp/cmsis5/CMSIS/Core/Include/* /tmp/asf4/samd21/CMSIS/Include/
+          fi
+
+      - name: Run hosttest & test release build
+        run: |
+          make hosttest
+          make release TOOLCHAIN=arm-none-eabi- ASF4=/tmp/asf4/samd21
+          ls -lh build/
