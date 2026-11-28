@@ -25,7 +25,7 @@ def parse_range(value):
     return start, length
 
 
-def read_flash_range(read_at, start, length):
+def read_flash_range(read_at, start, length, progress=None):
     """Read an arbitrary byte range using the bootloader's 64-byte raw READ."""
     if start < 0 or length < 0 or start + length > FLASH_SIZE:
         raise ValueError("read range is outside the 128 KiB flash")
@@ -35,6 +35,8 @@ def read_flash_range(read_at, start, length):
         if len(chunk) != REPORT_LEN:
             raise IOError("READ did not return exactly 64 raw bytes")
         out.extend(chunk[:min(REPORT_LEN, length - len(out))])
+        if progress is not None:
+            progress(len(out), length)
     return bytes(out)
 
 
@@ -80,13 +82,11 @@ def main():
         start, length = args.range
         print("READ-only backup: 0x%05x..0x%05x (%d bytes)" %
               (start, start + length, length))
-        data = bytearray()
-        while len(data) < length:
-            addr = start + len(data)
-            chunk = reader.read_at(addr)
-            data.extend(chunk[:min(REPORT_LEN, length - len(data))])
-            if len(data) % 4096 == 0:
-                print("  read %d/%d bytes" % (len(data), length))
+        def show_progress(done, total):
+            if done % 4096 == 0 or done == total:
+                print("  read %d/%d bytes" % (done, total))
+
+        data = read_flash_range(reader.read_at, start, length, show_progress)
         with open(args.out, "wb") as f:
             f.write(data)
         print("Saved %d bytes to %s" % (len(data), args.out))
