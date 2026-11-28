@@ -231,6 +231,7 @@ hosttest:
 	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
 	  tools/hosttest/test_trace.c src/trace.c -o $(HOSTTEST)/test_trace
 	@$(HOSTTEST)/test_trace
+	python3 tools/hosttest/test_ea9flash.py
 	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
 	  -c src/emount.c -o $(HOSTTEST)/emount-trace.o
 
