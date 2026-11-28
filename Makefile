@@ -131,13 +131,13 @@ else
 	@if [ "$(BUILD)" = trace ]; then \
 	    awk 'index($$0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
-	    awk 'index($0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
-	    awk 'index($0, "trace_save") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "trace_save") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE persistence hook missing from linker map"; exit 1; }; \
-	    awk 'index($0, "nvm_trace_write") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "nvm_trace_write") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE NVM writer missing from linker map"; exit 1; }; \
-	    awk 'index($0, "nvm_trace_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "nvm_trace_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE NVM eraser missing from linker map"; exit 1; }; \
 	    if awk 'index($$0, "nvm_log_") { found=1 } END { exit !found }' $(TARGET).map; then \
 	      echo "  FAIL: diagnostic LOG writer linked into TRACE image"; exit 1; \
