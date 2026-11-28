@@ -77,6 +77,14 @@ void nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words)
 {
 	nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
 }
+
+void nvm_trace_read(uint32_t addr, uint32_t *w, uint32_t words)
+{
+	uint32_t i;
+	if (addr % 4u || words == 0u
+	    || !nvm_inside(addr, words * 4u, NVM_LOG_BASE, NVM_LOG_END)) return;
+	for (i = 0; i < words; i++) w[i] = ((volatile const uint32_t *)addr)[i];
+}
 #endif
 
 void nvm_cfg_erase_row(uint32_t addr)
