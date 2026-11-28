@@ -28,6 +28,7 @@ void trace_new_command(void);
 void trace_event_queued(uint8_t events_ahead);
 void trace_event_tx(uint8_t code, uint8_t param);
 void trace_service(void);
+int trace_save(void);
 #else
 static inline void trace_init(void) {}
 static inline void trace_begin(int32_t p,int32_t t,uint8_t o)
@@ -36,5 +37,6 @@ static inline void trace_new_command(void) {}
 static inline void trace_event_queued(uint8_t n) {(void)n;}
 static inline void trace_event_tx(uint8_t c,uint8_t p) {(void)c;(void)p;}
 static inline void trace_service(void) {}
+static inline int trace_save(void) { return 0; }
 #endif
 #endif
