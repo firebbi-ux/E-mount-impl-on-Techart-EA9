@@ -36,6 +36,7 @@ else:
 import cfgblock     # noqa: E402
 import ea9_safety   # noqa: E402
 import gen_optical  # noqa: E402
+import lens_config_txt  # noqa: E402
 
 def _configure_diagnostics():
     try:
@@ -245,10 +246,26 @@ class BackupWorker(QThread):
                     os.unlink(temp_path)
                 if os.path.exists(self.output_path + ".sha256.partial"):
                     os.unlink(self.output_path + ".sha256.partial")
+            sidecar_note = ""
+            try:
+                lens_slots = lens_config_txt.slots_from_flash(bytes(data))
+                txt_path = os.path.splitext(self.output_path)[0] + "-lens-config.txt"
+                txt_temp = txt_path + ".partial"
+                with open(txt_temp, "w", encoding="utf-8") as txt_file:
+                    txt_file.write(lens_config_txt.format_txt(lens_slots))
+                    txt_file.flush()
+                    os.fsync(txt_file.fileno())
+                os.replace(txt_temp, txt_path)
+                sidecar_note = f"\n镜头清单：{txt_path}" if self.zh else f"\nLens list: {txt_path}"
+            except Exception as sidecar_error:
+                sidecar_note = (f"\n警告：备份成功，但镜头清单生成失败：{sidecar_error}"
+                                if self.zh else
+                                f"\nWarning: backup succeeded, but lens TXT generation failed: {sidecar_error}")
+                logging.exception("Lens TXT sidecar generation failed")
             self.completed.emit(True, (
-                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。现在可以安全拔下 USB 线。"
+                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}{sidecar_note}\n未发送任何写入指令。现在可以安全拔下 USB 线。"
                 if self.zh else
-                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}\nNo write command was sent. You may safely unplug the USB cable."
+                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}{sidecar_note}\nNo write command was sent. You may safely unplug the USB cable."
             ))
         except Exception as e:
             self.completed.emit(False, (
@@ -543,8 +560,14 @@ class MainWindow(QMainWindow):
         self.backup_btn.clicked.connect(self.on_backup)
         self.load_lens_btn = QPushButton()
         self.load_lens_btn.clicked.connect(self.on_load_lens_config)
+        self.new_lens_btn = QPushButton()
+        self.new_lens_btn.clicked.connect(self.on_new_lens_config)
+        self.save_lens_btn = QPushButton()
+        self.save_lens_btn.clicked.connect(self.on_save_lens_config)
         backup_actions.addWidget(self.backup_btn)
         backup_actions.addWidget(self.load_lens_btn)
+        backup_actions.addWidget(self.new_lens_btn)
+        backup_actions.addWidget(self.save_lens_btn)
 
         device_group = QGroupBox()
         device_actions = QVBoxLayout(device_group)
@@ -728,7 +751,9 @@ class MainWindow(QMainWindow):
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
         self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
-        self.load_lens_btn.setText(self._t("Load lens data from backup", "从本地备份读取镜头数据"))
+        self.load_lens_btn.setText(self._t("Open lens TXT", "打开镜头 TXT"))
+        self.new_lens_btn.setText(self._t("New lens TXT", "新建镜头 TXT"))
+        self.save_lens_btn.setText(self._t("Save lens TXT", "保存镜头 TXT"))
         self.restore_btn.setText(self._t("Restore from full backup", "从完整备份恢复原固件"))
         self.write_btn.setText(self._t("Flash project TRACE firmware", "烧入项目 TRACE 测试固件"))
         self._refresh_status_text()
@@ -870,82 +895,14 @@ class MainWindow(QMainWindow):
         logging.info("Backup completion UI settled; device_ok=%s path_present=%s",
                      self.device_ok, bool(self.seen_path))
 
-    def on_load_lens_config(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, self._t("Select a local full-flash backup", "选择本地完整 Flash 备份"),
-            os.path.expanduser("~"),
-            "EA9 full-flash backup (*.bin);;All files (*)",
-        )
-        if not path:
-            return
-        try:
-            with open(path, "rb") as source:
-                backup = source.read()
-            ea9_safety.validate_backup(backup)
-            with open(path + ".sha256", "r", encoding="ascii") as manifest:
-                ea9_safety.verify_sha256_manifest(backup, manifest.read())
-            self._load_lens_config_from_backup(path)
-            QMessageBox.information(
-                self, self.windowTitle(),
-                self._t("Lens configuration loaded from the verified local backup.",
-                        "已从通过 SHA-256 校验的本地备份载入镜头配置。")
-            )
-        except (Exception, SystemExit) as e:
-            logging.exception("Local backup lens configuration load failed")
-            QMessageBox.warning(
-                self, self.windowTitle(),
-                self._t(f"Could not load lens configuration: {e}",
-                        f"无法读取镜头配置：{e}")
-            )
-
-    def _load_lens_config_from_backup(self, path):
-        if not path:
-            raise ValueError("backup path is unavailable")
-        with open(path, "rb") as source:
-            flash = source.read()
-        if len(flash) != 0x20000:
-            raise ValueError(f"expected 128 KiB backup, got {len(flash)} bytes")
-        # A full-flash dump includes bootloader, application and TRACE log.
-        # The CfgAnchor marker may occur outside the application partition
-        # (or as an incidental byte sequence). Only accept a uniquely valid
-        # configuration block inside the application region.
-        app = flash[APP_BASE:APP_SAFE_END]
-        candidates = []
-        pos = 0
-        while True:
-            pos = app.find(cfgblock.MAGIC, pos)
-            if pos < 0:
-                break
-            absolute = APP_BASE + pos
-            if pos + cfgblock.SIZE <= len(app):
-                try:
-                    parsed = cfgblock.parse(app[pos:pos + cfgblock.SIZE])
-                    candidates.append((absolute, parsed))
-                except (Exception, SystemExit):
-                    pass
-            pos += 1
-        if len(candidates) != 1:
-            raise ValueError(
-                "application region contains %d valid lens configuration blocks; "
-                "expected exactly one" % len(candidates)
-            )
-        at, (hw, slots) = candidates[0]
-        active = [(i, slot) for i, slot in enumerate(slots) if slot[0] > 0]
-        if not active:
-            raise ValueError("no configured lens slots found")
-
-        self.hw_combo.setCurrentText(str(hw))
-        self.config_loaded_from_flash = True
-        if len(active) == 1:
-            _, (mm, name, xpd) = active[0]
+    def _apply_lens_slots(self, slots):
+        active = [(i, s) for i, s in enumerate(slots) if s[0] > 0]
+        if len(active) == 1 and active[0][0] == 0:
+            mm, name, xpd = active[0][1]
             self.single_radio.setChecked(True)
             self.single_focal.setText(str(mm))
             self.single_name.setText(name)
             self.single_xpd.setValue(float(xpd))
-            for i in range(8):
-                self.slot_focal[i].setText("")
-                self.slot_name[i].clear()
-                self.slot_xpd[i].setValue(45.0)
         else:
             self.multi_radio.setChecked(True)
             self.single_focal.setText("")
@@ -956,17 +913,64 @@ class MainWindow(QMainWindow):
                 f.setText(str(mm) if mm else "")
                 f.blockSignals(False)
                 self._on_slot_focal(f, n, x)
-                if mm:
-                    n.setText(name)
-                    x.setValue(float(xpd))
-                else:
-                    n.clear()
-                    x.setValue(45.0)
+                n.setText(name if mm else "")
+                x.setValue(float(xpd) if mm else 45.0)
         self.update_mode()
-        self.status_lbl.setText(self._t(
-            "Lens configuration loaded from the EA9 flash backup.",
-            "镜头配置已从 EA9 Flash 备份载入。"
-        ))
+
+    def on_new_lens_config(self):
+        if QMessageBox.question(self, self.windowTitle(),
+                self._t("Clear the current lens settings and start a new 8-slot TXT configuration?",
+                        "清空当前镜头设置并新建八槽位 TXT 配置？"),
+                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+        self.single_focal.clear()
+        self.single_name.setText(DEFAULT_NAME)
+        self.single_xpd.setValue(45.0)
+        self._apply_lens_slots([(0, "", 0.0)] * 8)
+        self.multi_radio.setChecked(True)
+        self.status_lbl.setText(self._t("New empty lens configuration.", "已新建空白镜头配置。"))
+
+    def on_load_lens_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self._t("Open EA9 lens TXT", "打开 EA9 镜头 TXT"),
+            os.path.expanduser("~"), "EA9 lens configuration (*.txt);;Text files (*.txt)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8-sig") as source:
+                slots = lens_config_txt.parse_txt(source.read())
+            self._apply_lens_slots(slots)
+            self.status_lbl.setText(self._t(f"Loaded lens configuration: {path}",
+                                             f"已载入镜头配置：{path}"))
+        except Exception as e:
+            logging.exception("Lens TXT import failed")
+            QMessageBox.warning(self, self.windowTitle(),
+                self._t(f"Could not load lens TXT: {e}", f"无法读取镜头 TXT：{e}"))
+
+    def on_save_lens_config(self):
+        try:
+            _, slots = self._collect_slots()
+            content = lens_config_txt.format_txt(slots)
+        except Exception as e:
+            QMessageBox.warning(self, self.windowTitle(), str(e))
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, self._t("Save EA9 lens TXT", "保存 EA9 镜头 TXT"),
+            os.path.join(os.path.expanduser("~"), "ea9-lens-config.txt"),
+            "EA9 lens configuration (*.txt)"
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".txt"):
+            path += ".txt"
+        try:
+            with open(path, "w", encoding="utf-8") as target:
+                target.write(content)
+            self.status_lbl.setText(self._t(f"Saved lens configuration: {path}",
+                                             f"镜头配置已保存：{path}"))
+        except OSError as e:
+            QMessageBox.critical(self, self.windowTitle(), str(e))
 
     def _collect_slots(self):
         hw = int(self.hw_combo.currentText())
