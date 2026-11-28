@@ -102,7 +102,46 @@ def main():
         raise AssertionError("image crossing LOG boundary was not rejected")
     check(not no_touch.checked, "oversize image must be rejected before USB CHECK/START")
 
-    print("PASS: EA9 USB readback, mismatch address, transfer sizing, flash boundary")
+
+    # EA9 backup / restore safety invariants
+    import ea9_safety
+    synthetic = bytearray((i * 29 + 7) & 0xff for i in range(ea9_safety.FLASH_SIZE))
+    boot = bytes(synthetic[:ea9_safety.BOOTLOADER_END])
+    ea9_safety.validate_backup(bytes(synthetic))
+    check(ea9_safety.verify_bootloader_reads(boot, boot, boot),
+          "bootloader must match two independent reads")
+    app_payload = ea9_safety.restore_application_payload(bytes(synthetic))
+    check(len(app_payload) == ea9_safety.APP_SIZE,
+          "restore payload must cover exactly the app partition")
+    check(app_payload == bytes(synthetic[0x5000:0x16000]),
+          "restore payload must preserve original app bytes exactly")
+    check(ea9_safety.APP_BASE + len(app_payload) == ea9_safety.LOG_BASE,
+          "restore payload must stop exactly before TRACE LOG")
+    try:
+        ea9_safety.verify_bootloader_reads(boot, boot, bytes([0]) * len(boot))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("changed second bootloader read was not rejected")
+    try:
+        ea9_safety.verify_bootloader_reads(boot, boot, bytes([1]) * len(boot))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("backup from another bootloader was not rejected")
+    try:
+        ea9_safety.validate_backup(bytes(synthetic[:-1]))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("truncated full-flash backup was not rejected")
+    try:
+        ea9_safety.validate_backup(bytes([0xff]) * ea9_safety.FLASH_SIZE)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("erased bootloader backup was not rejected")
+    print("PASS: EA9 USB readback, backup integrity, bounded restore, transfer sizing, flash boundary")
 
 
 if __name__ == "__main__":

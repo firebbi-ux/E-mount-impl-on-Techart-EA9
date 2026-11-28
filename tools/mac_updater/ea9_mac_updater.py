@@ -32,6 +32,7 @@ else:
     HW_IMG = os.path.join(REPO_DIR, "tools", "win_updater", "assets", "hw_version.jpg")
 
 import cfgblock     # noqa: E402
+import ea9_safety   # noqa: E402
 import gen_optical  # noqa: E402
 
 VID = 0x0483
@@ -189,13 +190,34 @@ class BackupWorker(QThread):
                             f"只读备份中… {pct}%"
                             if self.zh else f"Read-only backup... {pct}%"
                         ))
+                boot_first = bytes(data[:ea9_safety.BOOTLOADER_END])
+                boot_second = bytearray()
+                for address in range(0, ea9_safety.BOOTLOADER_END, REPORT_LEN):
+                    chunk = dev.read_at(address)
+                    if len(chunk) != REPORT_LEN:
+                        raise IOError(f"Invalid second bootloader READ at 0x{address:05x}")
+                    boot_second.extend(chunk)
+                ea9_safety.verify_bootloader_reads(
+                    boot_first, boot_first, bytes(boot_second)
+                )
             if len(data) != total:
                 raise IOError(f"Backup length is {len(data)}, expected {total}")
+            ea9_safety.validate_backup(bytes(data))
             digest = hashlib.sha256(data).hexdigest()
-            with open(self.output_path, "wb") as target:
-                target.write(data)
-                target.flush()
-                os.fsync(target.fileno())
+            temp_path = self.output_path + ".partial"
+            try:
+                with open(temp_path, "wb") as target:
+                    target.write(data)
+                    target.flush()
+                    os.fsync(target.fileno())
+                with open(temp_path, "rb") as check_file:
+                    saved = check_file.read()
+                if len(saved) != total or hashlib.sha256(saved).hexdigest() != digest:
+                    raise IOError("saved backup failed size/SHA-256 verification")
+                os.replace(temp_path, self.output_path)
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
             self.completed.emit(True, (
                 f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。"
                 if self.zh else
@@ -263,6 +285,79 @@ class FlashWorker(QThread):
         except Exception as e:
             err_msg = f"写入失败：{e}" if self.zh else f"Writing failed: {e}"
             self.finished.emit(False, err_msg)
+
+
+class RestoreWorker(QThread):
+    progress = Signal(int, str)
+    finished = Signal(bool, str)
+
+    def __init__(self, path, backup_path, declare_ver, zh):
+        super().__init__()
+        self.path = path
+        self.backup_path = backup_path
+        self.declare_ver = declare_ver
+        self.zh = zh
+
+    def _read_bootloader(self, dev):
+        data = bytearray()
+        for address in range(0, ea9_safety.BOOTLOADER_END, REPORT_LEN):
+            chunk = dev.read_at(address)
+            if len(chunk) != REPORT_LEN:
+                raise IOError(f"Incomplete bootloader READ at 0x{address:05x}")
+            data.extend(chunk)
+        return bytes(data)
+
+    def run(self):
+        try:
+            with open(self.backup_path, "rb") as source:
+                backup = source.read()
+            backup_boot, _ = ea9_safety.validate_backup(backup)
+            payload = ea9_safety.restore_application_payload(backup)
+            digest = hashlib.sha256(backup).hexdigest()
+            with HidBootloader(self.path) as dev:
+                version = dev.check()
+                first = self._read_bootloader(dev)
+                second = self._read_bootloader(dev)
+                ea9_safety.verify_bootloader_reads(backup_boot, first, second)
+                self.progress.emit(0, (
+                    f"引导区与备份匹配（SHA-256 {digest[:16]}…），开始恢复原应用固件…"
+                    if self.zh else
+                    f"Bootloader matches backup (SHA-256 {digest[:16]}…); restoring original application..."
+                ))
+                dev.start(self.declare_ver)
+                total = len(payload)
+                for offset in range(0, total, REPORT_LEN):
+                    dev.send(payload[offset:offset + REPORT_LEN])
+                    if dev.recv() is None:
+                        raise TimeoutError(f"Restore stopped acking at app offset 0x{offset:05x}")
+                    pct = min(100, (offset + REPORT_LEN) * 100 // total)
+                    if pct % 2 == 0:
+                        self.progress.emit(pct, (
+                            f"正在恢复原应用区… {pct}%"
+                            if self.zh else f"Restoring original application... {pct}%"
+                        ))
+                self.progress.emit(100, (
+                    "正在逐字节回读验证原应用区…"
+                    if self.zh else "Verifying restored application byte-for-byte..."
+                ))
+                for offset in range(0, total, REPORT_LEN):
+                    actual = dev.read_at(ea9_safety.APP_BASE + offset)
+                    expected = payload[offset:offset + REPORT_LEN]
+                    if actual != expected:
+                        mismatch = next((i for i, (a, e) in enumerate(zip(actual, expected)) if a != e), 0)
+                        raise IOError(
+                            f"Restore readback mismatch at flash 0x{ea9_safety.APP_BASE + offset + mismatch:08x}"
+                        )
+                dev.check()
+            self.finished.emit(True, (
+                "原应用区已恢复并通过逐字节回读校验。USB 引导区与 TRACE 日志区未写入。"
+                if self.zh else
+                "Original application restored and verified byte-for-byte. USB bootloader and TRACE LOG were not written."
+            ))
+        except Exception as e:
+            self.finished.emit(False, (
+                f"恢复失败：{e}" if self.zh else f"Restore failed: {e}"
+            ))
 
 
 class MainWindow(QMainWindow):
@@ -410,12 +505,16 @@ class MainWindow(QMainWindow):
         self.backup_btn = QPushButton()
         self.backup_btn.setEnabled(False)
         self.backup_btn.clicked.connect(self.on_backup)
+        self.restore_btn = QPushButton()
+        self.restore_btn.setEnabled(False)
+        self.restore_btn.clicked.connect(self.on_restore)
         self.write_btn = QPushButton()
         self.write_btn.setEnabled(False)
         self.write_btn.clicked.connect(self.on_write)
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         btn_row.addWidget(self.backup_btn)
+        btn_row.addWidget(self.restore_btn)
         btn_row.addWidget(self.write_btn)
         btn_row.addWidget(self.bar)
         lay.addLayout(btn_row)
@@ -580,6 +679,7 @@ class MainWindow(QMainWindow):
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
         self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
+        self.restore_btn.setText(self._t("Restore from full backup", "从完整备份恢复原固件"))
         self.write_btn.setText(self._t("Flash project TRACE firmware", "烧入项目 TRACE 测试固件"))
         self._refresh_status_text()
 
@@ -646,6 +746,7 @@ class MainWindow(QMainWindow):
         self.boot_ver = None
         self.write_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
+        self.restore_btn.setEnabled(False)
         if path is None:
             self._refresh_status_text()
             return
@@ -656,6 +757,7 @@ class MainWindow(QMainWindow):
             self._refresh_status_text()
             self.write_btn.setEnabled(True)
             self.backup_btn.setEnabled(True)
+            self.restore_btn.setEnabled(True)
         except Exception as e:
             self.device_lbl.setText(self._t("Adapter: Not responding", "转接环：无响应"))
             self.status_lbl.setText(self._t(f"No answer ({e})", f"转接环没有响应（{e}）"))
@@ -695,6 +797,10 @@ class MainWindow(QMainWindow):
 
     def on_backup_done(self, ok, msg):
         self.busy = False
+        if self.device_ok:
+            self.backup_btn.setEnabled(True)
+            self.restore_btn.setEnabled(True)
+            self.write_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
@@ -862,6 +968,7 @@ class MainWindow(QMainWindow):
         self.busy = True
         self.write_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
+        self.restore_btn.setEnabled(False)
         self.bar.setValue(0)
         self.worker = FlashWorker(self.seen_path, patched, self.declare_ver, self.zh)
         self.worker.progress.connect(lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg)))
@@ -870,6 +977,9 @@ class MainWindow(QMainWindow):
 
     def on_done(self, ok, msg):
         self.busy = False
+        if self.device_ok:
+            self.backup_btn.setEnabled(True)
+            self.restore_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
@@ -878,6 +988,78 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.windowTitle(), msg)
         else:
             self.seen_path = None
+            QMessageBox.critical(self, self.windowTitle(), msg)
+
+    def on_restore(self):
+        if not self.device_ok or not self.seen_path or self.busy:
+            return
+        backup_path, _ = QFileDialog.getOpenFileName(
+            self, self._t("Select a verified full-flash backup", "选择已保存的完整 Flash 备份"),
+            os.path.expanduser("~"),
+            "EA9 full-flash backup (*.bin);;All files (*)",
+        )
+        if not backup_path:
+            return
+        try:
+            with open(backup_path, "rb") as source:
+                backup = source.read()
+            ea9_safety.validate_backup(backup)
+            digest = hashlib.sha256(backup).hexdigest()
+            app_digest = hashlib.sha256(
+                backup[ea9_safety.APP_BASE:ea9_safety.APP_END]
+            ).hexdigest()
+        except Exception as e:
+            QMessageBox.critical(self, self.windowTitle(), self._t(
+                f"Backup rejected: {e}", f"备份文件校验失败，已拒绝恢复：{e}"
+            ))
+            return
+        prompt = self._t(
+            "DANGER: This will replace the EA9 application area with the exact application bytes from this backup.\\n\\n"
+            f"Backup SHA-256: {digest}\\nApplication SHA-256: {app_digest}\\n"
+            "Before writing, the connected bootloader will be read twice and must match this backup exactly. "
+            "Only 0x5000..0x15FFF is written. Bootloader 0x0000..0x4FFF and TRACE LOG from 0x16000 are excluded. "
+            "Keep USB connected until byte-for-byte readback verification completes. Continue?",
+            "危险操作：即将用此备份中的原始应用区字节完整替换 EA9 当前应用区。\\n\\n"
+            f"完整备份 SHA-256：{digest}\\n应用区 SHA-256：{app_digest}\\n"
+            "写入前会对当前 USB 引导区独立读取两次，并要求与此备份逐字节一致。"
+            "本操作只写 0x5000..0x15FFF；不写引导区 0x0000..0x4FFF，也不写 0x16000 起的 TRACE 日志区。"
+            "回读逐字节校验完成前请勿拔掉 USB。确认恢复？"
+        )
+        if QMessageBox.warning(
+            self, self.windowTitle(), prompt,
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel
+        ) != QMessageBox.Ok:
+            return
+        self.busy = True
+        self.backup_btn.setEnabled(False)
+        self.restore_btn.setEnabled(False)
+        self.write_btn.setEnabled(False)
+        self.bar.setValue(0)
+        self.restore_worker = RestoreWorker(
+            self.seen_path, backup_path, self.declare_ver, self.zh
+        )
+        self.restore_worker.progress.connect(
+            lambda pct, msg: (self.bar.setValue(pct), self.status_lbl.setText(msg))
+        )
+        self.restore_worker.finished.connect(self.on_restore_done)
+        self.restore_worker.start()
+
+    def on_restore_done(self, ok, msg):
+        self.busy = False
+        self.status_lbl.setText(msg)
+        if self.device_ok:
+            self.backup_btn.setEnabled(True)
+            self.restore_btn.setEnabled(True)
+            self.write_btn.setEnabled(True)
+        if ok:
+            self.bar.setValue(100)
+            self.device_lbl.setText(self._t(
+                "Original application restored; USB bootloader preserved.",
+                "原应用区已恢复；USB 引导区保持不变。"
+            ))
+            QMessageBox.information(self, self.windowTitle(), msg)
+        else:
             QMessageBox.critical(self, self.windowTitle(), msg)
 
 
