@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""macOS GUI flasher for the project-built EA9 TRACE test firmware."""
+"""macOS GUI flasher for the project-built EA9 TRACE test firmware and editable lens TXT files."""
 
 import os
 import re
