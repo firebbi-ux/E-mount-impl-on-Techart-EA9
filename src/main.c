@@ -1544,8 +1544,8 @@ static uint8_t focus_run(int32_t want, uint16_t target_u,
 	g_absorb_pending = 0;   /* a takeover belongs to the leg it arrived in */
 	forecast_model(cfg);
 	servo_move_rel(delta, cfg, &r);
-	g_moving      = 0;
 	trace_begin(r.end, want, r.outcome, em_events_sent);
+	g_moving      = 0;
 	focus_report();
 
 	for (i = 0; i < 16; i++) {
