@@ -10,11 +10,11 @@ import zlib
 FLASH_SIZE = 0x20000
 LOG_BASE = 0x16000
 LOG_SIZE = 0x6000
-SLOT_SIZE = 0x1800
+SLOT_SIZE = 0x400
 HEADER_SIZE = 64
 MAGIC = 0x45545243
-VERSION = 1
-CAPACITY = 256
+VERSION = 2
+CAPACITY = 80
 RECORD = struct.Struct("<IiBBH")
 HEADER = struct.Struct("<16I")
 KINDS = {
@@ -37,13 +37,13 @@ def _slot_region(blob):
         return blob, 0
     raise ValueError(
         "input must be a 128 KiB full-flash dump, 24 KiB LOG dump, "
-        "or one 6 KiB TRACE slot"
+        "or one 1 KiB TRACE slot"
     )
 
 
 def decode_slot(raw, slot_index):
     if len(raw) != SLOT_SIZE:
-        raise ValueError("TRACE slot must be exactly 0x1800 bytes")
+        raise ValueError("TRACE slot must be exactly 0x400 bytes")
     if raw == b"\xff" * SLOT_SIZE:
         return None
 
@@ -135,7 +135,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dump", help="full-flash or LOG-region dump file")
     parser.add_argument("-o", "--out", help="CSV output path (default: stdout)")
-    parser.add_argument("--slot", type=int, choices=range(4),
+    parser.add_argument("--slot", type=int, choices=range(24),
                         help="decode only this slot")
     args = parser.parse_args()
 
