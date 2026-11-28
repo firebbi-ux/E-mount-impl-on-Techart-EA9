@@ -426,6 +426,9 @@ class MainWindow(QMainWindow):
                 self.base_image = bf.read()
             if not self.base_image or len(self.base_image) > 0x10000:
                 raise ValueError("TRACE image is empty or exceeds the application flash region")
+            # The original updater stores lens calibration in the CfgAnchor block
+            # inside the application image. Validate it before enabling any flash.
+            cfgblock.find(self.base_image)
             self.trace_sha256 = hashlib.sha256(self.base_image).hexdigest()
         except Exception as e:
             self.base_image = None
@@ -433,10 +436,6 @@ class MainWindow(QMainWindow):
 
         self.apply_text()
         self.update_mode()
-        for widget in (self.hw_lbl, self.hw_combo, self.hw_help, self.mode_lbl,
-                       self.multi_radio, self.single_radio, self.focal_help,
-                       self.single_box, self.multi_box, self.slot_xpd_help):
-            widget.hide()
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll_usb)
         self.poll_timer.start(2000)
@@ -549,13 +548,13 @@ class MainWindow(QMainWindow):
     def apply_text(self):
         v = self.declare_ver
         self.setWindowTitle(self._t(
-            "EA9 Project TRACE Firmware Flasher",
-            "EA9 项目 TRACE 测试固件烧录工具"
+            "EA9 Project TRACE Lab — Calibration & Flasher",
+            "EA9 Project TRACE 实验室 — 参数校准与固件烧录"
         ))
         self.notes_lbl.setText(self._t("Release notes", "更新说明"))
         self.notes_box.setPlainText(self._t(
-            "PROJECT TRACE TEST FIRMWARE\\nThis app flashes the project-built TRACE image (bootloader declaration 2.4.1).\\nPersistent lens configuration and the separate TRACE log region are not rewritten.\\nSHA-256: " + str(self.trace_sha256),
-            "项目 TRACE 测试固件\\n本程序写入我们自行编译的 TRACE 镜像（引导程序声明版本 2.4.1）。\\n不会重写持久化镜头配置区，也不会覆盖独立的 TRACE 日志区。\\nSHA-256：" + str(self.trace_sha256)
+            "PROJECT TRACE TEST BUILD\\nOriginal lens calibration UI restored: adapter version, single/multiple lens profiles, focal length, lens name and exit pupil.\\nLens calibration is encoded into the CfgAnchor block in the application image. The separate TRACE log region is preserved.\\nBase image SHA-256: " + str(self.trace_sha256),
+            "PROJECT TRACE 测试构建\\n已恢复原版镜头参数界面：转接环版本、单/多镜头配置、焦距、镜头名称和出瞳距离。\\n镜头参数会写入应用程序镜像内的 CfgAnchor 配置块；独立 TRACE 日志区保持不变。\\n基础固件 SHA-256：" + str(self.trace_sha256)
         ))
         self.hw_lbl.setText(self._t("TRACE image:", "TRACE 固件："))
         how = self._t("How to choose?", "如何选择？")
@@ -751,16 +750,46 @@ class MainWindow(QMainWindow):
     def on_write(self):
         if not self.device_ok or not self.seen_path or self.base_image is None:
             return
-        digest = self.trace_sha256 or hashlib.sha256(self.base_image).hexdigest()
+        try:
+            hw, slots = self._collect_slots()
+            # Patch the original updater's lens-calibration block into a copy of
+            # our project TRACE image; never modify the bundled base image.
+            block = cfgblock.pack(hw, slots)
+            at = cfgblock.find(self.base_image)
+            patched = bytearray(self.base_image)
+            patched[at:at + cfgblock.SIZE] = block
+            patched = bytes(patched)
+            cfgblock.parse(patched[at:at + cfgblock.SIZE])
+        except (ValueError, SystemExit) as e:
+            QMessageBox.warning(self, self.windowTitle(), str(e))
+            return
+
+        digest = hashlib.sha256(patched).hexdigest()
+        lines = [self._t(f"Adapter version: {hw}", f"转接环版本：{hw}")]
+        active = [(i, s) for i, s in enumerate(slots) if s[0] > 0]
+        if len(active) == 1:
+            _, (mm, name, xpd) = active[0]
+            lines.append(self._t(
+                f"Single lens: {mm} mm, exit pupil {xpd:g} mm, \\"{name}\\"",
+                f"单镜头：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
+            ))
+        else:
+            for i, (mm, name, xpd) in active:
+                lines.append(self._t(
+                    f"{SLOT_APERTURES[i]}: {mm} mm, exit pupil {xpd:g} mm, \\"{name}\\"",
+                    f"{SLOT_APERTURES[i]}：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
+                ))
         prompt = self._t(
-            "You are about to write the PROJECT TRACE TEST FIRMWARE to the EA9 application area (bootloader declaration 2.4.1).\\n\\n"
-            f"Image size: {len(self.base_image)} bytes\\nSHA-256: {digest}\\n\\n"
-            "Persistent lens configuration and the separate TRACE log region are outside this image.\\n"
-            "Make a full-flash backup first if you have not already. Do not unplug USB until readback verification finishes. Continue?",
-            "即将把我们自己的 PROJECT TRACE 测试固件写入 EA9 应用程序区（引导程序声明版本 2.4.1）。\\n\\n"
-            f"镜像大小：{len(self.base_image)} 字节\\nSHA-256：{digest}\\n\\n"
-            "此镜像不包含持久化镜头配置区，也不覆盖独立的 TRACE 日志区。\\n"
-            "如尚未备份，请先执行完整 Flash 备份。写入及回读校验完成前不要拔掉 USB。确认继续？"
+            "The project TRACE firmware will be flashed with these lens settings:\\n\\n"
+            + "\\n".join(lines)
+            + f"\\n\\nPatched image: {len(patched)} bytes\\nSHA-256: {digest}\\n"
+            + "The application image is verified by readback. The separate TRACE log region is not touched.\\n"
+            + "Make a full 128 KiB backup first. Continue?",
+            "即将把以下镜头参数写入项目 TRACE 固件并烧录：\\n\\n"
+            + "\\n".join(lines)
+            + f"\\n\\n配置后镜像：{len(patched)} 字节\\nSHA-256：{digest}\\n"
+            + "烧录后将逐字节回读校验应用区；独立 TRACE 日志区不会触碰。\\n"
+            + "请先完成 128 KiB 完整 Flash 备份。确认继续？"
         )
         if QMessageBox.question(self, self.windowTitle(), prompt,
                                 QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
@@ -769,7 +798,7 @@ class MainWindow(QMainWindow):
         self.write_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
         self.bar.setValue(0)
-        self.worker = FlashWorker(self.seen_path, self.base_image, self.declare_ver, self.zh)
+        self.worker = FlashWorker(self.seen_path, patched, self.declare_ver, self.zh)
         self.worker.progress.connect(lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg)))
         self.worker.finished.connect(self.on_done)
         self.worker.start()

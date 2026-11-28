@@ -75,7 +75,7 @@ jobs:
 
       - name: Build .app and package .dmg
         run: |
-          pyinstaller --noconfirm --windowed --name EA9Updater \
+          pyinstaller --noconfirm --windowed --name EA9ProjectTRACE \
             --hidden-import hid \
             --paths tools --paths tools/win_updater \
             --add-data "build/ea9-rebuild-trace.bin:firmware" \
@@ -86,9 +86,9 @@ jobs:
             tools/mac_updater/ea9_mac_updater.py
           mkdir -p out_dmg
           hdiutil create -volname "EA9-Project-TRACE" \
-            -srcfolder dist/EA9Updater.app \
+            -srcfolder dist/EA9ProjectTRACE.app \
             -ov -format UDZO \
-            "out_dmg/EA9-Project-TRACE-Flasher-macOS-${{ matrix.arch_name }}.dmg"
+            "out_dmg/EA9-Project-TRACE-Lab-macOS-${{ matrix.arch_name }}.dmg"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
