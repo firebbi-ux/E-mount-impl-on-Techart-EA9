@@ -35,6 +35,7 @@ void nvm_log_write(uint32_t addr, const uint32_t *w, uint32_t words);
 #ifdef EA9_TRACE
 void nvm_trace_erase_row(uint32_t addr);
 void nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words);
+void nvm_trace_read(uint32_t addr, uint32_t *w, uint32_t words);
 #endif
 
 void nvm_cfg_erase_row(uint32_t addr);
