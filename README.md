@@ -335,23 +335,25 @@ finished markers. The start and target records share a timestamp.
 
 At camera shutdown, after the `0x16` acknowledgement has been sent and its
 50 ms wire-settle delay has elapsed, but before UART shutdown and TX-low, TRACE
-copies the retained ring into one of four rotating 6 KiB slots in
-`0x16000–0x1C000`. Each slot is erased independently; record data is written
-first and a CRC-protected header last, so an interrupted save is not mistaken
-for a valid snapshot. The TRACE-only NVM writer is range-checked to LOG and
-cannot address the application, bootloader, or CFG region. Diagnostic LOG
-writers remain compiled out; the existing CFG writer remains enabled in
+copies the newest retained records into one of 24 rotating 1 KiB slots in
+`0x16000–0x1C000`. Each slot holds a 64-byte header and up to 80 records
+(960 bytes). The four rows in a slot are erased independently; record data is
+written first and a CRC-protected header last, so an interrupted save is not
+mistaken for a valid snapshot. The TRACE-only NVM writer is range-checked to
+LOG and cannot address the application, bootloader, or CFG region. Diagnostic
+LOG writers remain compiled out; the existing CFG writer remains enabled in
 `0x1C000–0x1D000`.
 
-A full 256-record save requires 24 row erases and 48 data-page programs plus
-the header page. At the SAM D21E17A datasheet maxima (6 ms per row erase,
-2.5 ms per page program), the NVM operations alone are bounded at about
-266.5 ms; CRC/readback and software overhead add to that. This happens only
-in the post-acknowledgement power-down path,
-not during focus, servo, or status-frame processing. The body's documented RXD
-low wait is up to 30 seconds; the save delays the subsequent TX-low transition,
-not the shutdown acknowledgement itself. This timing still requires real
-hardware validation before treating the TRACE image as safe to flash.
+A maximum-size 80-record save requires four row erases and 16 page programs
+(15 data pages plus the header page). At the SAM D21E17A datasheet maxima
+(6 ms per row erase, 2.5 ms per page program), the erase/program operations
+alone are bounded at about 64 ms; CRC/readback and software overhead add to
+that. This happens only in the post-acknowledgement power-down path, not during
+focus, servo, or status-frame processing. The body's documented RXD low wait
+is up to 30 seconds; the save delays the subsequent TX-low transition, not the
+shutdown acknowledgement itself. The timing and available power window still
+require real hardware validation before treating the TRACE image as safe to
+flash.
 
 The debug, release, and TRACE images are **different binaries**, so results from one build do not automatically validate another. `make hosttest` exercises the same
 sources either way, but the optimisation level is not the one the recorded
