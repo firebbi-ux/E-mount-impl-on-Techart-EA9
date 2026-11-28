@@ -524,14 +524,14 @@ static const struct ea9_packet *find_packet(uint8_t id)
  */
 static uint32_t g_cs_low_us;      /* micros() when our chip select last fell */
 
-static void em_transmit(uint8_t *frame, uint16_t len)
+static uint8_t em_transmit(uint8_t *frame, uint16_t len)
 {
 	uint16_t sum  = 0;
 	uint32_t low;
 
 	if (g_m16_seen && frame[3] == EM_CLASS_NORMAL
 	    && (frame[5] == 0x05u || frame[5] == 0x06u)) {
-		return;
+		return 0;
 	}
 
 	frame[1]       = (uint8_t)len;
@@ -561,6 +561,7 @@ static void em_transmit(uint8_t *frame, uint16_t len)
 	g_cs_low_us = micros();
 
 	em_frames_tx++;
+	return 1;
 }
 
 /* The shutdown acknowledgement: a fixed 10-byte frame, class 0x02, seq 0,
@@ -2408,8 +2409,7 @@ void em_pump_status(void)
 		}
 		sent_ans = k;
 
-		em_transmit(em_msg_06, len);
-		if (g_event_n) {
+		if (em_transmit(em_msg_06, len) && g_event_n) {
 			trace_event_tx(g_event_code[0], g_event_param[0]);
 		}
 
