@@ -129,9 +129,9 @@ ifeq ($(BUILD),debug)
 	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
 else
 	@if [ "$(BUILD)" = trace ]; then \
-	    awk 'index($0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
-	    awk 'index($0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
 	    echo "  verified: RAM-only TRACE module linked"; \
 	 fi
