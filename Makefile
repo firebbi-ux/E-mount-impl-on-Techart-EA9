@@ -123,10 +123,10 @@ ifeq ($(BUILD),debug)
 	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
 else
 	@if [ "$(BUILD)" = trace ]; then \
-	    $(TOOLCHAIN)nm $(TARGET).elf | grep -q ' g_trace$' \
-	      || { echo "  FAIL: TRACE buffer missing from image"; exit 1; }; \
-	    $(TOOLCHAIN)nm $(TARGET).elf | grep -q ' trace_service$' \
-	      || { echo "  FAIL: TRACE service missing from image"; exit 1; }; \
+	    grep -Eq '[[:space:]]g_trace$' $(TARGET).map \
+	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
+	    grep -Eq '[[:space:]]trace_service$' $(TARGET).map \
+	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
 	    echo "  verified: RAM-only TRACE module linked"; \
 	 fi
 	@# The release image is checked for the OPPOSITE of the debug image: the
