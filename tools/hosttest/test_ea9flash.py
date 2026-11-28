@@ -53,10 +53,10 @@ def main():
     check(len(snapshot) == 100, "full-flash reader must trim the final partial report")
     check(read_addresses == [0x1ff80, 0x1ffc0], "full-flash reader must advance by 64 bytes")
 
-    slot = bytearray(b"\xff" * 0x1800)
+    slot = bytearray(b"\xff" * 0x400)
     records = struct.pack("<IiBBH", 1000, 123, 1, 0, 0) + struct.pack("<IiBBH", 1000, 456, 2, 0, 0)
     header = [0xffffffff] * 16
-    header[0:12] = [0x45545243, 1, 7, 2, 2, 2, 0, 0, 1, 0, 1000, zlib.crc32(records) & 0xffffffff]
+    header[0:12] = [0x45545243, 2, 7, 2, 2, 2, 0, 0, 1, 0, 1000, zlib.crc32(records) & 0xffffffff]
     header[12] = zlib.crc32(struct.pack("<12I", *header[:12])) & 0xffffffff
     slot[:64] = struct.pack("<16I", *header)
     slot[64:64 + len(records)] = records
