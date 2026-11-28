@@ -1021,9 +1021,6 @@ class MainWindow(QMainWindow):
         active = [i for i, (mm, _, _) in enumerate(slots) if mm > 0]
         if not active:
             raise ValueError(self._t("Enter at least one lens focal length.", "请至少配置一支镜头的焦距。"))
-        if len(active) == 1 and active[0] != 0:
-            slots[0] = slots[active[0]]
-            slots[active[0]] = (0, "", 0.0)
         return hw, slots
 
     def on_write(self):
@@ -1047,7 +1044,7 @@ class MainWindow(QMainWindow):
         digest = hashlib.sha256(patched).hexdigest()
         lines = [self._t(f"Adapter version: {hw}", f"转接环版本：{hw}")]
         active = [(i, s) for i, s in enumerate(slots) if s[0] > 0]
-        if len(active) == 1:
+        if len(active) == 1 and active[0][0] == 0:
             _, (mm, name, xpd) = active[0]
             lines.append(self._t(
                 f'Single lens: {mm} mm, exit pupil {xpd:g} mm, "{name}"',
