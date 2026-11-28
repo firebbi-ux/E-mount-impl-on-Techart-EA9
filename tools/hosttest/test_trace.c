@@ -31,7 +31,13 @@ int main(void)
   if(g_trace.records[i].kind==TRACE_SAMPLE)samples++;
  check(samples>=190 && samples<=200,"approximately 5 ms sample cadence");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_FINISHED,"finished marker");
- trace_begin(10,20,0);
+ {
+  unsigned at=g_trace.write_count;
+  trace_begin(10,20,0);
+  check(g_trace.records[at % TRACE_CAPACITY].kind==TRACE_BEGIN,"second session begin retained");
+  check(g_trace.records[(at+1u) % TRACE_CAPACITY].kind==TRACE_TARGET,"second session target marker retained");
+  check(g_trace.records[(at+1u) % TRACE_CAPACITY].pos==20,"second session target is not overwritten by later session");
+ }
  trace_event_queued(1);
  trace_event_tx(EM_REC_STOP,0x01u);
  check(!g_trace.event_sent,"older queued event is not mistaken for Move");
