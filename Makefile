@@ -123,9 +123,9 @@ ifeq ($(BUILD),debug)
 	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
 else
 	@if [ "$(BUILD)" = trace ]; then \
-	    grep -Eq '[[:space:]]g_trace$' $(TARGET).map \
+	    awk '$NF == "g_trace" { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
-	    grep -Eq '[[:space:]]trace_service$' $(TARGET).map \
+	    awk '$NF == "trace_service" { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
 	    echo "  verified: RAM-only TRACE module linked"; \
 	 fi
