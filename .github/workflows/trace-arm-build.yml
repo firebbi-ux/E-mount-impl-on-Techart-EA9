@@ -44,7 +44,7 @@ jobs:
         run: |
           arm-none-eabi-size build/ea9-rebuild-trace.elf
           stat -c '%n %s bytes' build/ea9-rebuild-trace.bin
-          grep -E '^\.(text|rodata|data|bss|_user_heap_stack)' build/ea9-rebuild-trace.map || true
+          awk '$1 == ".text" || $1 == ".rodata" || $1 == ".data" || $1 == ".bss" || $1 == "._user_heap_stack"' build/ea9-rebuild-trace.map
 
       - name: Upload build evidence
         if: always()
