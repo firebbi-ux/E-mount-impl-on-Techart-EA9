@@ -20,6 +20,13 @@ void nvm_trace_erase_row(uint32_t address)
     memset(flash_image + offset, 0xFF, NVM_ROW_SIZE);
 }
 
+void nvm_trace_read(uint32_t address, uint32_t *words, uint32_t count)
+{
+    uint32_t offset = address - NVM_LOG_BASE;
+    if (address % 4u || offset + count * 4u > sizeof(flash_image)) abort();
+    memcpy(words, flash_image + offset, count * 4u);
+}
+
 void nvm_trace_write(uint32_t address, const uint32_t *words, uint32_t count)
 {
     uint32_t offset = address - NVM_LOG_BASE, i;
