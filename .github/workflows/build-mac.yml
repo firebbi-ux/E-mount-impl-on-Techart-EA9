@@ -50,8 +50,6 @@ jobs:
         include:
           - os: macos-latest
             arch_name: AppleSilicon-arm64
-          - os: macos-15-intel
-            arch_name: Intel-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository

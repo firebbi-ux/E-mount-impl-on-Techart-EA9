@@ -51,7 +51,8 @@ def xpd_of(optical):
     """The exit pupil an optical file was built with: type 0 at infinity / 15."""
     # LF header 16, ED chunk header 8, ED header 8, block header 10, closest row 12
     t0_inf = struct.unpack_from("<H", optical, 16 + 8 + 8 + 10 + 12)[0]
-    return round(t0_inf / 15)
+    # Preserve the encoded 1/15 mm resolution instead of rounding to whole mm.
+    return round(t0_inf / 15, 1)
 
 
 def find(image):
@@ -85,8 +86,8 @@ def parse(block):
             if opt[:2] != b"LF":
                 sys.exit("slot %d: optical file does not start LF" % i)
             xpd = xpd_of(opt)
-            if xpd not in gen_optical.XPD_CHOICES:
-                sys.exit("slot %d: exit pupil %d mm is not one of %s" % (i, xpd, gen_optical.XPD_CHOICES))
+            if not (1.0 <= xpd <= 1000.0):
+                sys.exit("slot %d: exit pupil %.1f mm is outside the supported range" % (i, xpd))
             if gen_optical.build(mm, xpd) != opt:
                 sys.exit("slot %d: optical file differs from gen_optical.build(%d, %d)" % (i, mm, xpd))
         slots.append((mm, name.split(b"\0")[0].decode("ascii"), xpd))

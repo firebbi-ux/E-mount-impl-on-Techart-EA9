@@ -277,6 +277,8 @@ class MainWindow(QMainWindow):
         self.busy = False
         self.worker = None
         self.backup_worker = None
+        self.backup_output_path = None
+        self.config_loaded_from_flash = False
         self.boot_ver = None
 
         self.resize(820, 760)
@@ -683,6 +685,7 @@ class MainWindow(QMainWindow):
         self.backup_btn.setEnabled(False)
         self.write_btn.setEnabled(False)
         self.bar.setValue(0)
+        self.backup_output_path = output_path
         self.backup_worker = BackupWorker(self.seen_path, output_path, self.zh)
         self.backup_worker.progress.connect(
             lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg))
@@ -695,11 +698,72 @@ class MainWindow(QMainWindow):
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
-            QMessageBox.information(self, self.windowTitle(), msg)
+            try:
+                self._load_lens_config_from_backup(self.backup_output_path)
+                msg += self._t(
+                    "\\n\\nLens configuration was read from the saved flash backup and loaded into the form.",
+                    "\\n\\n已从刚保存的 Flash 备份读取镜头配置，并载入参数界面。"
+                )
+                self.status_lbl.setText(msg)
+                QMessageBox.information(self, self.windowTitle(), msg)
+            except Exception as e:
+                warn = self._t(
+                    f"\\n\\nBackup is valid, but lens configuration could not be decoded: {e}",
+                    f"\\n\\nFlash 备份已成功，但镜头配置读取失败：{e}"
+                )
+                self.status_lbl.setText(msg + warn)
+                QMessageBox.warning(self, self.windowTitle(), msg + warn)
         else:
             QMessageBox.critical(self, self.windowTitle(), msg)
         self.seen_path = None
         self.poll_usb()
+
+    def _load_lens_config_from_backup(self, path):
+        if not path:
+            raise ValueError("backup path is unavailable")
+        with open(path, "rb") as source:
+            flash = source.read()
+        if len(flash) != 0x20000:
+            raise ValueError(f"expected 128 KiB backup, got {len(flash)} bytes")
+        at = cfgblock.find(flash)
+        hw, slots = cfgblock.parse(flash[at:at + cfgblock.SIZE])
+        active = [(i, slot) for i, slot in enumerate(slots) if slot[0] > 0]
+        if not active:
+            raise ValueError("no configured lens slots found")
+
+        self.hw_combo.setCurrentText(str(hw))
+        self.config_loaded_from_flash = True
+        if len(active) == 1:
+            _, (mm, name, xpd) = active[0]
+            self.single_radio.setChecked(True)
+            self.single_focal.setText(str(mm))
+            self.single_name.setText(name)
+            self.single_xpd.setValue(float(xpd))
+            for i in range(8):
+                self.slot_focal[i].setText("")
+                self.slot_name[i].clear()
+                self.slot_xpd[i].setValue(45.0)
+        else:
+            self.multi_radio.setChecked(True)
+            self.single_focal.setText("")
+            self.single_name.setText(DEFAULT_NAME)
+            for i, (mm, name, xpd) in enumerate(slots):
+                f, n, x = self.slot_focal[i], self.slot_name[i], self.slot_xpd[i]
+                f.blockSignals(True)
+                f.setText(str(mm) if mm else "")
+                f.blockSignals(False)
+                self._on_slot_focal(f, n, x)
+                if mm:
+                    n.setText(name)
+                    x.setValue(float(xpd))
+                else:
+                    n.clear()
+                    x.setValue(45.0)
+        self.update_mode()
+        self.status_lbl.setText(self._t(
+            "Lens configuration loaded from the EA9 flash backup.",
+            "镜头配置已从 EA9 Flash 备份载入。"
+        ))
 
     def _collect_slots(self):
         hw = int(self.hw_combo.currentText())
