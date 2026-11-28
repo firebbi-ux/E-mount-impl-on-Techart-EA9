@@ -25,7 +25,13 @@ int main(void)
   if(g_trace.records[i].kind==TRACE_SAMPLE)samples++;
  check(samples>=190 && samples<=200,"approximately 5 ms sample cadence");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_FINISHED,"finished marker");
- trace_begin(10,20,0); trace_new_command();
+ trace_begin(10,20,0);
+ trace_event_queued(1);
+ trace_event_tx(0x1Cu,0x01u);
+ check(!g_trace.event_sent,"older queued event is not mistaken for Move");
+ trace_event_tx(0x1Du,0x00u);
+ check(g_trace.event_sent,"Move event recognized after earlier queue item");
+ trace_new_command();
  check(!g_trace.active,"new command cancels observation");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_CANCELLED,"cancel marker");
  puts("PASS: trace ring, sampling window, markers, cancellation");
