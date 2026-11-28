@@ -89,7 +89,7 @@ int trace_save(void)
 {
     uint32_t header[16], page[16], crc = 0xFFFFFFFFu;
     uint32_t count = g_trace.retained_count;
-    uint32_t first, i, j, page_no, total_bytes;
+    uint32_t first, i, j, page_no, total_bytes, data_pages;
     unsigned slot, row;
     uint32_t sequence;
 
@@ -97,6 +97,7 @@ int trace_save(void)
 
     first = g_trace.write_count - count;
     total_bytes = count * (uint32_t)sizeof(struct trace_record);
+    data_pages = (total_bytes + NVM_PAGE_SIZE - 1u) / NVM_PAGE_SIZE;
 
     /* Compute the chronological stream CRC before touching flash. */
     for (i = 0; i < total_bytes; i++)
@@ -111,7 +112,7 @@ int trace_save(void)
 
     /* Program the chronological ring contents, one complete 64-byte page
      * at a time. Unused tail bytes remain erased (0xFF). */
-    for (page_no = 0; page_no < TRACE_STORE_DATA_PAGES; page_no++) {
+    for (page_no = 0; page_no < data_pages; page_no++) {
         for (j = 0; j < 16; j++) page[j] = 0xFFFFFFFFu;
         for (j = 0; j < NVM_PAGE_SIZE; j++) {
             uint32_t offset = page_no * NVM_PAGE_SIZE + j;
