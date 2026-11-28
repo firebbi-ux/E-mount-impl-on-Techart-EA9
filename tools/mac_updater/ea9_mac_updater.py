@@ -404,7 +404,8 @@ class MainWindow(QMainWindow):
         self.config_loaded_from_flash = False
         self.boot_ver = None
 
-        self.resize(820, 760)
+        self.resize(900, 800)
+        self.setMinimumSize(820, 720)
         root = QWidget()
         self.setCentralWidget(root)
         lay = QVBoxLayout(root)
@@ -529,28 +530,45 @@ class MainWindow(QMainWindow):
         self.device_lbl = QLabel()
         lay.addWidget(self.device_lbl)
 
-        btn_row = QHBoxLayout()
+        # 操作区分组：左侧处理本地备份，右侧处理设备固件。
+        # 进度条独立占满整行，避免被长按钮挤压。
+        action_row = QHBoxLayout()
+        action_row.setSpacing(12)
+
+        backup_group = QGroupBox()
+        backup_actions = QVBoxLayout(backup_group)
+        backup_actions.setSpacing(8)
         self.backup_btn = QPushButton()
         self.backup_btn.setEnabled(False)
         self.backup_btn.clicked.connect(self.on_backup)
         self.load_lens_btn = QPushButton()
         self.load_lens_btn.clicked.connect(self.on_load_lens_config)
+        backup_actions.addWidget(self.backup_btn)
+        backup_actions.addWidget(self.load_lens_btn)
+
+        device_group = QGroupBox()
+        device_actions = QVBoxLayout(device_group)
+        device_actions.setSpacing(8)
         self.restore_btn = QPushButton()
         self.restore_btn.setEnabled(False)
         self.restore_btn.clicked.connect(self.on_restore)
         self.write_btn = QPushButton()
         self.write_btn.setEnabled(False)
         self.write_btn.clicked.connect(self.on_write)
+        device_actions.addWidget(self.restore_btn)
+        device_actions.addWidget(self.write_btn)
+
+        action_row.addWidget(backup_group, 1)
+        action_row.addWidget(device_group, 1)
+        lay.addLayout(action_row)
+
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
-        btn_row.addWidget(self.backup_btn)
-        btn_row.addWidget(self.load_lens_btn)
-        btn_row.addWidget(self.restore_btn)
-        btn_row.addWidget(self.write_btn)
-        btn_row.addWidget(self.bar)
-        lay.addLayout(btn_row)
+        self.bar.setMinimumHeight(22)
+        lay.addWidget(self.bar)
 
         self.status_lbl = QLabel()
+        self.status_lbl.setWordWrap(True)
         lay.addWidget(self.status_lbl)
 
         try:
