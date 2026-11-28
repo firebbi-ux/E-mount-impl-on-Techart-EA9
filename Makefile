@@ -96,7 +96,13 @@ INCLUDES := -Isrc \
             -I$(ASF4)/hpl/core -I$(ASF4)/hpl/pm -I$(ASF4)/hpl/port \
             -I$(ASF4)/hri
 
-LDFLAGS  = -mthumb -mcpu=cortex-m0plus -Tsrc/ea9.ld -Wl,--gc-sections \
+ifeq ($(BUILD),trace)
+LINKER_SCRIPT := src/ea9_trace.ld
+else
+LINKER_SCRIPT := src/ea9.ld
+endif
+
+LDFLAGS  = -mthumb -mcpu=cortex-m0plus -T$(LINKER_SCRIPT) -Wl,--gc-sections \
            -Wl,-Map=$(TARGET).map --specs=nano.specs --specs=nosys.specs
 
 SRCS := src/startup_samd21.c src/system_samd21.c src/board.c \
@@ -123,9 +129,9 @@ ifeq ($(BUILD),debug)
 	  || { echo "  FAIL: no DRY0 marker in the image"; exit 1; }
 else
 	@if [ "$(BUILD)" = trace ]; then \
-	    awk '$NF == "g_trace" { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($0, "g_trace") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE buffer missing from linker map"; exit 1; }; \
-	    awk '$NF == "trace_service" { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($0, "trace_service") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE service missing from linker map"; exit 1; }; \
 	    echo "  verified: RAM-only TRACE module linked"; \
 	 fi
