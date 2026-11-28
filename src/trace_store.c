@@ -46,10 +46,7 @@ static uint32_t slot_base(unsigned slot)
 
 static int read_header(unsigned slot, uint32_t words[16])
 {
-    volatile const uint32_t *flash =
-        (volatile const uint32_t *)slot_base(slot);
-    uint32_t i;
-    for (i = 0; i < 16; i++) words[i] = flash[i];
+    nvm_trace_read(slot_base(slot), words, 16u);
     if (words[0] != TRACE_STORE_MAGIC || words[1] != TRACE_STORE_VERSION
         || words[3] > TRACE_CAPACITY) return 0;
     return words[12] == crc32_bytes((const uint8_t *)words, 12u * sizeof(uint32_t));
