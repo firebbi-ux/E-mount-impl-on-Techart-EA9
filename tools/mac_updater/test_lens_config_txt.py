@@ -36,14 +36,28 @@ class LensConfigTxtTests(unittest.TestCase):
         self.assertEqual(hw, 2)
         self.assertEqual(decoded, slots)
 
-    def test_full_flash_reads_only_the_fixed_config_offset(self):
+    def test_full_flash_selects_valid_block_for_preferred_hardware_version(self):
+        v2_slots = [(35, "Lens v2", 42.5)] + [(0, "", 0.0)] * 7
+        v1_slots = [(50, "Lens v1", 48.3)] + [(0, "", 0.0)] * 7
+        v2_block = cfgblock.pack(2, v2_slots)
+        v1_block = cfgblock.pack(1, v1_slots)
+        flash = bytearray(0x20000)
+        flash[0xAF08:0xAF08 + len(v2_block)] = v2_block
+        flash[0x12008:0x12008 + len(v1_block)] = v1_block
+        # A bootloader marker is outside the application scan range.
+        flash[0x100:0x100 + len(cfgblock.MAGIC)] = cfgblock.MAGIC
+        self.assertEqual(lens_config_txt.slots_from_flash(bytes(flash)), v2_slots)
+        self.assertEqual(
+            lens_config_txt.slots_from_flash(bytes(flash), preferred_hw_version=1),
+            v1_slots,
+        )
+
+    def test_full_flash_ignores_invalid_candidate(self):
         slots = [(35, "Lens at slot 1", 42.5)] + [(0, "", 0.0)] * 7
         block = cfgblock.pack(2, slots)
         flash = bytearray(0x20000)
-        flash[lens_config_txt.FLASH_CONFIG_OFFSET:
-              lens_config_txt.FLASH_CONFIG_OFFSET + len(block)] = block
-        # An unrelated duplicate marker elsewhere must not affect fixed-offset parsing.
-        flash[0x100:0x100 + len(cfgblock.MAGIC)] = cfgblock.MAGIC
+        flash[0xAF08:0xAF08 + len(block)] = block
+        flash[0x12008:0x12008 + len(cfgblock.MAGIC)] = cfgblock.MAGIC
         self.assertEqual(lens_config_txt.slots_from_flash(bytes(flash)), slots)
 
 
