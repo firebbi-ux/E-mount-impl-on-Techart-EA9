@@ -295,13 +295,14 @@ built build/ea9-rebuild.bin (18164 bytes)
 
 #### Debug and release
 
-There are two configurations, and they differ in exactly two things:
-optimisation, and whether the flash trail exists.
+There are three configurations: debug, release, and the separate
+experimental TRACE build.
 
-| | command | image | optimisation | flash trail |
+| | command | image | optimisation / defines | diagnostic LOG |
 | --- | --- | --- | --- | --- |
 | **debug** | `make` | `build/ea9-rebuild.bin` | `-O1 -DDEBUG` | **written** |
-| **release** | `make release` | `build/ea9-rebuild-release.bin` | `-O2 -DNDEBUG` | **none** |
+| **release** | `make release` | `build/ea9-rebuild-release.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG` | **none** |
+| **TRACE (experimental)** | `make trace` | `build/ea9-rebuild-trace.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE` | **RAM only** |
 
 The debug image is the instrumented one: it erases and programs pages at
 `0x16000` as it runs, which is what `--dump` reads back and what every result
@@ -331,6 +332,20 @@ both of which write `CTRLB` and issue no command.
 Each configuration has its own object directory (`build/obj-debug`,
 `build/obj-release`), so switching between them cannot leave a stale object in
 the image — which has cost this project camera runs before (§21, §43, §51).
+
+The TRACE image is a separate investigation build, not a release candidate.
+It keeps a 256-record ring in RAM (12 bytes per record): each session stores
+its start position and target, then position samples at an approximately 5 ms
+cadence for up to one second, plus event-queued / event-sent / cancelled /
+finished markers. The start and target records share a timestamp. The ring is
+volatile: it is lost on reset or power removal, and the current `--dump`
+command cannot retrieve it. **Do not flash TRACE expecting the trace to be
+available through USB yet.**
+
+TRACE uses `src/ea9_trace.ld`, which caps the application load image at
+`0x16000`, before the LOG region. Its diagnostic LOG writer is compiled out;
+the existing CFG writer remains enabled for lens configuration in
+`0x1C000–0x1D000`. TRACE itself does not write its RAM records to flash.
 
 Note that the two images are **different binaries**, so a release image is not
 covered by a debug image's hardware results. `make hosttest` exercises the same
