@@ -8,7 +8,7 @@ SLOT_APERTURES = ("f/2.5", "f/2.8", "f/3.2", "f/3.5",
 FIELDS = ("槽位号", "焦距", "镜头名称", "出瞳距离")
 
 
-def _validate_slots(slots):
+def _validate_slots(slots, allow_empty=False):
     if len(slots) != 8:
         raise ValueError("镜头配置必须包含 8 个槽位")
     clean = []
@@ -32,13 +32,13 @@ def _validate_slots(slots):
         if not 1.0 <= xpd <= 1000.0:
             raise ValueError("槽位 %d 出瞳距离必须为 1.0–1000.0 mm" % (i + 1))
         clean.append((int(mm), name, xpd))
-    if not any(x[0] for x in clean):
+    if not allow_empty and not any(x[0] for x in clean):
         raise ValueError("至少需要配置一支镜头")
     return clean
 
 
-def format_txt(slots):
-    slots = _validate_slots(slots)
+def format_txt(slots, allow_empty=True):
+    slots = _validate_slots(slots, allow_empty=allow_empty)
     lines = ["EA9 镜头配置", "单位：焦距 mm；出瞳距离 mm", ""]
     for i, (mm, name, xpd) in enumerate(slots):
         lines.extend([
@@ -96,7 +96,7 @@ def parse_txt(text):
     finish()
     if any(x is None for x in slots):
         raise ValueError("TXT 必须按标准格式包含完整的 8 个槽位")
-    return _validate_slots(slots)
+    return _validate_slots(slots, allow_empty=True)
 
 
 def slots_from_flash(flash):
