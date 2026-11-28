@@ -44,7 +44,7 @@ def _slot_region(blob):
 def decode_slot(raw, slot_index):
     if len(raw) != SLOT_SIZE:
         raise ValueError("TRACE slot must be exactly 0x1800 bytes")
-    if raw == b"\\xff" * SLOT_SIZE:
+    if raw == b"\xff" * SLOT_SIZE:
         return None
 
     words = HEADER.unpack_from(raw, 0)
