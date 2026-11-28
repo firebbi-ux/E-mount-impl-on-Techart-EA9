@@ -42,3 +42,19 @@ def restore_application_payload(data):
     if len(app) != APP_SIZE:
         raise ValueError("backup application region is incomplete")
     return app
+
+def make_sha256_manifest(data):
+    import hashlib
+    return hashlib.sha256(data).hexdigest() + "\\n"
+
+
+def verify_sha256_manifest(data, manifest_text):
+    import hashlib
+    fields = manifest_text.strip().split()
+    if not fields or len(fields[0]) != 64:
+        raise ValueError("missing or malformed SHA-256 manifest")
+    expected = fields[0].lower()
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise ValueError("backup SHA-256 does not match its sidecar manifest")
+    return actual

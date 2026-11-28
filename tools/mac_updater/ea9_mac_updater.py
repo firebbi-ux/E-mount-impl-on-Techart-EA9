@@ -215,9 +215,20 @@ class BackupWorker(QThread):
                 if len(saved) != total or hashlib.sha256(saved).hexdigest() != digest:
                     raise IOError("saved backup failed size/SHA-256 verification")
                 os.replace(temp_path, self.output_path)
+                manifest_path = self.output_path + ".sha256"
+                manifest_temp = manifest_path + ".partial"
+                with open(manifest_temp, "w", encoding="ascii") as manifest:
+                    manifest.write(ea9_safety.make_sha256_manifest(saved))
+                    manifest.flush()
+                    os.fsync(manifest.fileno())
+                with open(manifest_temp, "r", encoding="ascii") as manifest:
+                    ea9_safety.verify_sha256_manifest(saved, manifest.read())
+                os.replace(manifest_temp, manifest_path)
             finally:
                 if os.path.exists(temp_path):
                     os.unlink(temp_path)
+                if os.path.exists(self.output_path + ".sha256.partial"):
+                    os.unlink(self.output_path + ".sha256.partial")
             self.completed.emit(True, (
                 f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。"
                 if self.zh else
@@ -298,12 +309,12 @@ class RestoreWorker(QThread):
         self.declare_ver = declare_ver
         self.zh = zh
 
-    def _read_bootloader(self, dev):
+    def _read_range(self, dev, start, end):
         data = bytearray()
-        for address in range(0, ea9_safety.BOOTLOADER_END, REPORT_LEN):
+        for address in range(start, end, REPORT_LEN):
             chunk = dev.read_at(address)
             if len(chunk) != REPORT_LEN:
-                raise IOError(f"Incomplete bootloader READ at 0x{address:05x}")
+                raise IOError(f"Incomplete flash READ at 0x{address:05x}")
             data.extend(chunk)
         return bytes(data)
 
@@ -314,17 +325,23 @@ class RestoreWorker(QThread):
             backup_boot, _ = ea9_safety.validate_backup(backup)
             payload = ea9_safety.restore_application_payload(backup)
             digest = hashlib.sha256(backup).hexdigest()
+            manifest_path = self.backup_path + ".sha256"
+            with open(manifest_path, "r", encoding="ascii") as manifest:
+                ea9_safety.verify_sha256_manifest(backup, manifest.read())
             with HidBootloader(self.path) as dev:
-                version = dev.check()
-                first = self._read_bootloader(dev)
-                second = self._read_bootloader(dev)
+                current_version = dev.check()
+                first = self._read_range(dev, 0, ea9_safety.BOOTLOADER_END)
+                second = self._read_range(dev, 0, ea9_safety.BOOTLOADER_END)
                 ea9_safety.verify_bootloader_reads(backup_boot, first, second)
+                log_before = self._read_range(dev, ea9_safety.LOG_BASE, ea9_safety.FLASH_SIZE)
                 self.progress.emit(0, (
                     f"引导区与备份匹配（SHA-256 {digest[:16]}…），开始恢复原应用固件…"
                     if self.zh else
                     f"Bootloader matches backup (SHA-256 {digest[:16]}…); restoring original application..."
                 ))
-                dev.start(self.declare_ver)
+                # Preserve the bootloader's current version declaration; this
+                # is bookkeeping separate from the camera-facing version in the app.
+                dev.start(current_version)
                 total = len(payload)
                 for offset in range(0, total, REPORT_LEN):
                     dev.send(payload[offset:offset + REPORT_LEN])
@@ -348,7 +365,14 @@ class RestoreWorker(QThread):
                         raise IOError(
                             f"Restore readback mismatch at flash 0x{ea9_safety.APP_BASE + offset + mismatch:08x}"
                         )
-                dev.check()
+                boot_after = self._read_range(dev, 0, ea9_safety.BOOTLOADER_END)
+                log_after = self._read_range(dev, ea9_safety.LOG_BASE, ea9_safety.FLASH_SIZE)
+                if boot_after != backup_boot:
+                    raise IOError("USB bootloader region changed during restore")
+                if log_after != log_before:
+                    raise IOError("TRACE LOG region changed during restore")
+                if dev.check() != current_version:
+                    raise IOError("bootloader version declaration changed during restore")
             self.finished.emit(True, (
                 "原应用区已恢复并通过逐字节回读校验。USB 引导区与 TRACE 日志区未写入。"
                 if self.zh else
@@ -984,6 +1008,9 @@ class MainWindow(QMainWindow):
         if ok:
             self.bar.setValue(100)
             self.device_ok = False
+            self.backup_btn.setEnabled(False)
+            self.restore_btn.setEnabled(False)
+            self.write_btn.setEnabled(False)
             self.device_lbl.setText(self._t("Firmware written", "固件已写入"))
             QMessageBox.information(self, self.windowTitle(), msg)
         else:
@@ -1004,7 +1031,8 @@ class MainWindow(QMainWindow):
             with open(backup_path, "rb") as source:
                 backup = source.read()
             ea9_safety.validate_backup(backup)
-            digest = hashlib.sha256(backup).hexdigest()
+            with open(backup_path + ".sha256", "r", encoding="ascii") as manifest:
+                digest = ea9_safety.verify_sha256_manifest(backup, manifest.read())
             app_digest = hashlib.sha256(
                 backup[ea9_safety.APP_BASE:ea9_safety.APP_END]
             ).hexdigest()
@@ -1023,6 +1051,7 @@ class MainWindow(QMainWindow):
             f"完整备份 SHA-256：{digest}\\n应用区 SHA-256：{app_digest}\\n"
             "写入前会对当前 USB 引导区独立读取两次，并要求与此备份逐字节一致。"
             "本操作只写 0x5000..0x15FFF；不写引导区 0x0000..0x4FFF，也不写 0x16000 起的 TRACE 日志区。"
+            "必须同时提供配套的 .sha256 校验文件。"
             "回读逐字节校验完成前请勿拔掉 USB。确认恢复？"
         )
         if QMessageBox.warning(

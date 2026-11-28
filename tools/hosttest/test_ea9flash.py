@@ -110,6 +110,15 @@ def main():
     ea9_safety.validate_backup(bytes(synthetic))
     check(ea9_safety.verify_bootloader_reads(boot, boot, boot),
           "bootloader must match two independent reads")
+    manifest = ea9_safety.make_sha256_manifest(bytes(synthetic))
+    check(ea9_safety.verify_sha256_manifest(bytes(synthetic), manifest),
+          "backup sidecar must validate the complete file")
+    try:
+        ea9_safety.verify_sha256_manifest(bytes(synthetic[:-1]) + b"X", manifest)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("tampered backup was not rejected by its SHA-256 sidecar")
     app_payload = ea9_safety.restore_application_payload(bytes(synthetic))
     check(len(app_payload) == ea9_safety.APP_SIZE,
           "restore payload must cover exactly the app partition")
