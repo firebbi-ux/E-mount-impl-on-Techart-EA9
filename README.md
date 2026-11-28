@@ -417,6 +417,19 @@ The macOS updater performs the same readback check after its write. This verifie
 the written application range; it is not a
 substitute for preserving the full-flash backup.
 
+**Export TRACE after a camera shutdown** — use the 24 KiB LOG region and
+decode its valid, CRC-checked snapshots to CSV:
+
+```bash
+python3 tools/ea9flash.py --dump 0x16000:0x6000 -o ea9-trace-region.bin
+python3 tools/mac_updater/ea9_trace_decode.py ea9-trace-region.bin -o ea9-trace.csv
+```
+
+The decoder also accepts the full 128 KiB backup produced by
+`ea9_dump.py`. Invalid or interrupted slots are skipped with a warning;
+valid slots are emitted with their sequence numbers so AF-S and AF-C sessions
+can be correlated across shutdowns.
+
 **Read flash back** — used here to recover the diagnostic trail after a camera
 session. A **release** image leaves no trail, so this returns erased flash (or
 whatever the last debug image left behind); flash the debug image before a
