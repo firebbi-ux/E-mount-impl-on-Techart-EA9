@@ -1720,9 +1720,9 @@ int main(void)
 			fail("at rest pl[20..21] %u pl[2..3] %u, want 5000 5000",
 			     POS(0x1A), POS(0x08));
 		}
-		/* A motor command alone is not measured motion.  With no velocity
-		 * measured in the last eighth, the status forecast must stay at
-		 * the latched position rather than inventing acceleration. */
+		/* A motor command alone is not measured motion.  With neither a
+		 * last-eighth velocity nor whole-frame displacement, the forecast
+		 * must stay at the latch rather than inventing acceleration. */
 		em_set_forecast_model(6250u, 11431u, 26u);
 		em_frame_period_ms = 17u;
 		em_set_motor(1);
