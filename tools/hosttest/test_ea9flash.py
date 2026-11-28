@@ -65,6 +65,19 @@ def main():
           "TRACE decoder must accept a valid snapshot")
     check(decoded[0]["records"][1]["pos"] == 456,
           "TRACE decoder must preserve signed encoder positions")
+
+    log_region = bytearray(b"\\xff" * 0x6000)
+    log_region[23 * 0x400:24 * 0x400] = slot
+    log_decoded = ea9_trace_decode.decode_dump(bytes(log_region))
+    check(len(log_decoded) == 1 and log_decoded[0]["slot"] == 23,
+          "TRACE decoder must locate the last slot in a 24 KiB LOG dump")
+
+    full_flash = bytearray(b"\\xff" * 0x20000)
+    full_flash[0x16000 + 23 * 0x400:0x16000 + 24 * 0x400] = slot
+    full_decoded = ea9_trace_decode.decode_dump(bytes(full_flash))
+    check(len(full_decoded) == 1 and full_decoded[0]["slot"] == 23,
+          "TRACE decoder must locate the last slot in a full-flash dump")
+
     damaged_slot = bytearray(slot)
     damaged_slot[70] ^= 1
     check(ea9_trace_decode.decode_dump(bytes(damaged_slot)) == [],
