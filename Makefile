@@ -158,10 +158,8 @@ else
 	    exit 1; \
 	 fi
 	@echo "  verified: no build-marker page (the trail is compiled out)"
-	@# The load-bearing check.  Every flash erase and program in this
-	@# firmware goes through nvm.c, whose log writers are nvm_log_*; if no
-	@# diag_*, trail_* or nvm_log_* symbol was linked, the image can write
-	@# only the configuration region.
+	@# Diagnostic LOG symbols must be absent. TRACE has its own bounded
+	@# nvm_trace_* path, checked separately above; release has no LOG writer.
 	@if $(TOOLCHAIN)nm $(TARGET).elf | grep -qE ' (diag_|trail_|nvm_log_)'; then \
 	    echo "  FAIL: log symbols linked into a release image:"; \
 	    $(TOOLCHAIN)nm $(TARGET).elf | grep -E ' (diag_|trail_|nvm_log_)'; \
