@@ -8,14 +8,19 @@ static void trace_put(uint8_t kind,uint8_t detail,int32_t pos)
 {
  uint32_t n=g_trace.write_count;
  struct trace_record *r=&g_trace.records[n % TRACE_CAPACITY];
- if(n>=TRACE_CAPACITY && g_trace.active) g_trace.dropped++;
+ if(g_trace.retained_count<TRACE_CAPACITY) g_trace.retained_count++;
+ else {
+  g_trace.overwritten_count++;
+  if(g_trace.active) g_trace.dropped++;
+ }
  r->t_us=micros(); r->pos=pos; r->kind=kind; r->detail=detail; r->reserved=0;
  g_trace.write_count=n+1u;
 }
 void trace_init(void)
 {
  uint32_t i;
- g_trace.write_count=0; g_trace.dropped=0; g_trace.session=0;
+ g_trace.write_count=0; g_trace.retained_count=0; g_trace.overwritten_count=0;
+ g_trace.dropped=0; g_trace.session=0; g_trace.session_first=0;
  g_trace.start_us=0; g_trace.next_sample_us=0; g_trace.target=0; g_trace.events_ahead=0;
  g_trace.active=0; g_trace.event_queued=0; g_trace.event_sent=0;
  for(i=0;i<TRACE_CAPACITY;i++) {
@@ -26,7 +31,8 @@ void trace_init(void)
 }
 void trace_begin(int32_t pos,int32_t target,uint8_t outcome)
 {
- g_trace.active=0; g_trace.session++; g_trace.start_us=micros(); g_trace.target=target;
+ g_trace.active=0; g_trace.session++; g_trace.session_first=g_trace.write_count;
+ g_trace.start_us=micros(); g_trace.target=target;
  g_trace.next_sample_us=g_trace.start_us+TRACE_SAMPLE_US;
  g_trace.events_ahead=0; g_trace.event_queued=0; g_trace.event_sent=0;
  trace_put(TRACE_BEGIN,outcome,pos);
