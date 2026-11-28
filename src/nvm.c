@@ -68,7 +68,7 @@ void nvm_log_write(uint32_t addr, const uint32_t *w, uint32_t words)
 #endif
 
 #ifdef EA9_TRACE
-void nvm_trace_erase_row(uint32_t addr)
+__attribute__((noinline, used)) void nvm_trace_erase_row(uint32_t addr)
 {
 	nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
 }
