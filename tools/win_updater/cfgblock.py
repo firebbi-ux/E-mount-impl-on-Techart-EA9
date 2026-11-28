@@ -110,7 +110,7 @@ def main():
         sys.exit("the block does not round-trip (bytes after a name's NUL?)")
     print("lens configuration block at 0x%05x, hardware version %d" % (at, hw))
     for i, (mm, name, xpd) in enumerate(slots):
-        print("  slot %d  %4d mm  exit pupil %2d mm  %s" % (i, mm, xpd, name))
+        print("  slot %d  %4d mm  exit pupil %4.1f mm  %s" % (i, mm, xpd, name))
     if args.out:
         with open(args.out, "wb") as f:
             f.write(image)
