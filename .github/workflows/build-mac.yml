@@ -71,6 +71,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install PySide6 hidapi pyinstaller
 
+      - name: Validate lens TXT format and firmware conversion
+        run: |
+          python -m py_compile tools/mac_updater/ea9_mac_updater.py tools/mac_updater/lens_config_txt.py
+          PYTHONPATH=tools/win_updater:tools/mac_updater python -m unittest discover -s tools/mac_updater -p 'test_*.py' -v
+
       - name: Build .app and package .dmg
         run: |
           pyinstaller --noconfirm --windowed --name EA9ProjectTRACE \
