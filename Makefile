@@ -241,7 +241,7 @@ hosttest:
 	  tools/hosttest/test_trace_store.c src/trace.c src/trace_store.c -o $(HOSTTEST)/test_trace_store
 	@$(HOSTTEST)/test_trace_store
 	python3 tools/hosttest/test_ea9flash.py
-	python3 -m py_compile tools/ea9flash.py tools/mac_updater/ea9_mac_updater.py tools/mac_updater/ea9_dump.py
+	python3 -m py_compile tools/ea9flash.py tools/mac_updater/ea9_mac_updater.py tools/mac_updater/ea9_dump.py tools/mac_updater/ea9_trace_decode.py
 	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
 	  -c src/emount.c -o $(HOSTTEST)/emount-trace.o
 
