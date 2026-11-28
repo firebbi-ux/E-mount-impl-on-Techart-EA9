@@ -38,8 +38,7 @@ static uint32_t crc32_bytes(const uint8_t *data, uint32_t length)
     uint32_t crc = 0xFFFFFFFFu;
     uint32_t i;
     for (i = 0; i < length; i++) crc = crc32_update(crc, data[i]);
-    *result = crc ^ 0xFFFFFFFFu;
-    return 1;
+    return crc ^ 0xFFFFFFFFu;
 }
 
 static uint32_t slot_base(unsigned slot)
@@ -92,7 +91,8 @@ static int readback_crc(uint32_t base, uint32_t length, uint32_t *result)
         for (i = 0; i < NVM_PAGE_SIZE && offset + i < length; i++)
             crc = crc32_update(crc, ((const uint8_t *)page)[i]);
     }
-    return crc ^ 0xFFFFFFFFu;
+    *result = crc ^ 0xFFFFFFFFu;
+    return 1;
 }
 
 /* Returns 1 only after the final, CRC-protected header page is committed. */
