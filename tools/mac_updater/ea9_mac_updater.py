@@ -551,52 +551,62 @@ class MainWindow(QMainWindow):
         self.device_lbl = QLabel()
         lay.addWidget(self.device_lbl)
 
-        # 操作区分组：左侧处理本地备份，右侧处理设备固件。
-        # 进度条独立占满整行，避免被长按钮挤压。
+        # 两组管理操作置于上方；设备写入作为独立、醒目的主操作。
         action_row = QHBoxLayout()
-        action_row.setSpacing(12)
+        action_row.setSpacing(16)
 
         backup_group = QGroupBox()
         self.lens_group = backup_group
-        backup_actions = QGridLayout(backup_group)
-        backup_actions.setSpacing(4)
-        self.backup_btn = QPushButton()
-        self.backup_btn.setEnabled(False)
-        self.backup_btn.clicked.connect(self.on_backup)
+        backup_actions = QVBoxLayout(backup_group)
+        backup_actions.setContentsMargins(12, 16, 12, 12)
+        backup_actions.setSpacing(9)
         self.load_lens_btn = QPushButton()
         self.load_lens_btn.clicked.connect(self.on_load_lens_config)
         self.save_lens_btn = QPushButton()
         self.save_lens_btn.clicked.connect(self.on_save_lens_config)
-        self.write_lens_btn = QPushButton()
-        self.write_lens_btn.setEnabled(False)
-        self.write_lens_btn.clicked.connect(self.on_write_lens_config)
-        for button in (self.load_lens_btn, self.save_lens_btn, self.write_lens_btn):
-            button.setMinimumHeight(30)
-            button.setMaximumHeight(34)
-        backup_actions.addWidget(self.load_lens_btn, 0, 0, 1, 2)
-        backup_actions.addWidget(self.save_lens_btn, 1, 0, 1, 2)
-        backup_actions.addWidget(self.write_lens_btn, 2, 0, 1, 2)
+        for button in (self.load_lens_btn, self.save_lens_btn):
+            button.setMinimumHeight(36)
+            button.setMaximumHeight(38)
+            backup_actions.addWidget(button, 0, Qt.AlignLeft)
 
         device_group = QGroupBox()
         self.firmware_group = device_group
         device_actions = QVBoxLayout(device_group)
-        device_actions.setSpacing(4)
+        device_actions.setContentsMargins(12, 16, 12, 12)
+        device_actions.setSpacing(9)
+        self.backup_btn = QPushButton()
+        self.backup_btn.setEnabled(False)
+        self.backup_btn.clicked.connect(self.on_backup)
         self.restore_btn = QPushButton()
         self.restore_btn.setEnabled(False)
         self.restore_btn.clicked.connect(self.on_restore)
-        self.write_btn = QPushButton()
-        self.write_btn.setEnabled(False)
-        self.write_btn.clicked.connect(self.on_write_firmware)
-        for button in (self.backup_btn, self.restore_btn, self.write_btn):
-            button.setMinimumHeight(30)
-            button.setMaximumHeight(34)
-        device_actions.addWidget(self.backup_btn)
-        device_actions.addWidget(self.restore_btn)
-        device_actions.addWidget(self.write_btn)
+        for button in (self.backup_btn, self.restore_btn):
+            button.setMinimumHeight(36)
+            button.setMaximumHeight(38)
+            device_actions.addWidget(button, 0, Qt.AlignLeft)
 
         action_row.addWidget(backup_group, 1)
         action_row.addWidget(device_group, 1)
         lay.addLayout(action_row)
+
+        primary_row = QHBoxLayout()
+        primary_row.setContentsMargins(0, 8, 0, 4)
+        primary_row.addStretch()
+        self.write_lens_btn = QPushButton()
+        self.write_lens_btn.setEnabled(False)
+        self.write_lens_btn.setMinimumHeight(42)
+        self.write_lens_btn.setMaximumHeight(44)
+        self.write_lens_btn.setStyleSheet(
+            "QPushButton { background-color: #2878d0; color: white; "
+            "font-weight: 600; border: 1px solid #3989e0; border-radius: 7px; "
+            "padding: 8px 24px; } "
+            "QPushButton:hover { background-color: #3489e4; } "
+            "QPushButton:disabled { background-color: #526477; color: #c0c8d0; }"
+        )
+        self.write_lens_btn.clicked.connect(self.on_write_lens_config)
+        primary_row.addWidget(self.write_lens_btn, 0, Qt.AlignCenter)
+        primary_row.addStretch()
+        lay.addLayout(primary_row)
 
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
@@ -768,9 +778,15 @@ class MainWindow(QMainWindow):
         self.backup_btn.setText(self._t("Read and back up current firmware", "读取并备份当前固件"))
         self.load_lens_btn.setText(self._t("Open lens configuration file", "打开镜头配置文件"))
         self.save_lens_btn.setText(self._t("Save lens configuration file", "保存镜头配置文件"))
-        self.write_lens_btn.setText(self._t("Write lens configuration", "写入镜头配置"))
         self.restore_btn.setText(self._t("Restore firmware from backup", "从备份恢复固件"))
-        self.write_btn.setText(self._t("Write new firmware", "写入新固件"))
+        self.write_lens_btn.setText(self._t(
+            "Write firmware + lens configuration", "写入固件与镜头配置"
+        ))
+        # 按文字内容设定按钮宽度，避免按钮被拉伸成整行横条。
+        for button in (self.load_lens_btn, self.save_lens_btn,
+                       self.backup_btn, self.restore_btn):
+            button.setFixedWidth(button.sizeHint().width() + 34)
+        self.write_lens_btn.setFixedWidth(self.write_lens_btn.sizeHint().width() + 54)
         self._refresh_status_text()
 
     def _refresh_status_text(self):
@@ -834,7 +850,6 @@ class MainWindow(QMainWindow):
         self.seen_path = path
         self.device_ok = False
         self.boot_ver = None
-        self.write_btn.setEnabled(False)
         self.write_lens_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
@@ -846,7 +861,6 @@ class MainWindow(QMainWindow):
                 self.boot_ver = dev.check()
             self.device_ok = True
             self._refresh_status_text()
-            self.write_btn.setEnabled(True)
             self.write_lens_btn.setEnabled(True)
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
@@ -877,7 +891,6 @@ class MainWindow(QMainWindow):
 
         self.busy = True
         self.backup_btn.setEnabled(False)
-        self.write_btn.setEnabled(False)
         self.write_lens_btn.setEnabled(False)
         self.bar.setValue(0)
         self.backup_output_path = output_path
@@ -896,7 +909,6 @@ class MainWindow(QMainWindow):
         if self.device_ok:
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
-            self.write_btn.setEnabled(True)
             self.write_lens_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
@@ -1021,31 +1033,6 @@ class MainWindow(QMainWindow):
             raise ValueError(self._t("Enter at least one lens focal length.", "请至少配置一支镜头的焦距。"))
         return hw, slots
 
-    def on_write_firmware(self):
-        if not self.device_ok or not self.seen_path or self.base_image is None or self.busy:
-            return
-        digest = hashlib.sha256(self.base_image).hexdigest()
-        prompt = self._t(
-            "The bundled project TRACE test firmware will be written to the application area. "
-            "The application is read back and verified; the bootloader and TRACE log region are not written. "
-            "Make a full 128 KiB backup first. Continue?",
-            "即将写入当前版本内置的 TRACE 测试固件。应用区写入后会完整回读校验；"
-            "引导区和 TRACE 日志区不会写入。请先完成 128 KiB 完整备份。确认继续？"
-        ) + "\n\nSHA-256: " + digest
-        if QMessageBox.question(self, self.windowTitle(), prompt,
-                                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
-            return
-        self.busy = True
-        self.write_btn.setEnabled(False)
-        self.write_lens_btn.setEnabled(False)
-        self.backup_btn.setEnabled(False)
-        self.restore_btn.setEnabled(False)
-        self.bar.setValue(0)
-        self.worker = FlashWorker(self.seen_path, self.base_image, self.declare_ver, self.zh)
-        self.worker.progress.connect(lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg)))
-        self.worker.finished.connect(self.on_done)
-        self.worker.start()
-
     def on_write_lens_config(self):
         if not self.device_ok or not self.seen_path or self.base_image is None or self.busy:
             return
@@ -1095,7 +1082,6 @@ class MainWindow(QMainWindow):
                                 QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
             return
         self.busy = True
-        self.write_btn.setEnabled(False)
         self.write_lens_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
@@ -1110,7 +1096,6 @@ class MainWindow(QMainWindow):
         if self.device_ok:
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
-            self.write_btn.setEnabled(True)
             self.write_lens_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
@@ -1118,7 +1103,6 @@ class MainWindow(QMainWindow):
             self.device_ok = False
             self.backup_btn.setEnabled(False)
             self.restore_btn.setEnabled(False)
-            self.write_btn.setEnabled(False)
             self.write_lens_btn.setEnabled(False)
             self.device_lbl.setText(self._t("Firmware written", "固件已写入"))
             QMessageBox.information(self, self.windowTitle(), msg)
@@ -1172,7 +1156,6 @@ class MainWindow(QMainWindow):
         self.busy = True
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
-        self.write_btn.setEnabled(False)
         self.write_lens_btn.setEnabled(False)
         self.bar.setValue(0)
         self.restore_worker = RestoreWorker(
@@ -1190,7 +1173,6 @@ class MainWindow(QMainWindow):
         if self.device_ok:
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
-            self.write_btn.setEnabled(True)
             self.write_lens_btn.setEnabled(True)
         if ok:
             self.bar.setValue(100)
