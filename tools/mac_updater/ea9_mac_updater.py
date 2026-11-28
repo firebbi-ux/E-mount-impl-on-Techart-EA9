@@ -378,9 +378,9 @@ class RestoreWorker(QThread):
                 if dev.check() != current_version:
                     raise IOError("bootloader version declaration changed during restore")
             self.finished.emit(True, (
-                "原应用区已恢复并通过逐字节回读校验。USB 引导区与 TRACE 日志区未写入。"
+                "原应用区已恢复并通过逐字节回读校验。USB 引导区与 TRACE 日志区未写入。现在可以安全拔下 USB 线。"
                 if self.zh else
-                "Original application restored and verified byte-for-byte. USB bootloader and TRACE LOG were not written."
+                "Original application restored and verified byte-for-byte. USB bootloader and TRACE LOG were not written. You may safely unplug the USB cable."
             ))
         except Exception as e:
             self.finished.emit(False, (
