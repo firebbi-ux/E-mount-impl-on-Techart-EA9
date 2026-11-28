@@ -13,6 +13,8 @@ int main(void)
  unsigned i,samples=0;
  trace_init(); trace_begin(100,200,0);
  check(g_trace.active,"begin activates trace");
+ check(g_trace.retained_count==1,"retained record count starts at one");
+ check(g_trace.session_first==0,"session start sequence retained");
  check(g_trace.records[0].kind==TRACE_BEGIN,"begin marker");
  trace_event_queued(0);
  check(g_trace.records[1].kind==TRACE_EVENT_QUEUED,"queue marker");
@@ -35,6 +37,10 @@ int main(void)
  trace_new_command();
  check(!g_trace.active,"new command cancels observation");
  check(g_trace.records[(g_trace.write_count-1)%TRACE_CAPACITY].kind==TRACE_CANCELLED,"cancel marker");
+ check(g_trace.retained_count==g_trace.write_count,"retained count before wrap");
+ for(i=0;i<TRACE_CAPACITY+10u;i++) trace_begin((int32_t)i,(int32_t)i+1,0);
+ check(g_trace.retained_count==TRACE_CAPACITY,"retained count saturates at ring capacity");
+ check(g_trace.overwritten_count>0,"ring overwrite count is explicit");
  puts("PASS: trace ring, sampling window, markers, cancellation");
  return 0;
 }
