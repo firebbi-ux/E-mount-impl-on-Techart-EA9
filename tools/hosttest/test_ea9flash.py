@@ -30,8 +30,8 @@ def main():
     image = bytes((i * 37) & 0xff for i in range(130))
     dev = FakeReadback(image)
     ea9flash.verify_image(dev, image, progress=False)
-    check(dev.addresses == [0x5000, 0x5040, 0x5080],
-          "readback must cover every 64-byte chunk, including the tail")
+    check(dev.addresses == list(range(0x5000, 0x5000 + ea9flash.transfer_length(len(image)), 64)),
+          "readback must cover the full padded transfer, including the tail")
 
     damaged = bytearray(image)
     damaged[70] ^= 0x01
