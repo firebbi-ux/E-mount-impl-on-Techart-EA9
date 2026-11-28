@@ -403,8 +403,9 @@ python3 tools/ea9flash.py build/ea9-rebuild-release.bin --verify
 ```
 
 `--verify` reads the app back from `0x5000` over the bootloader READ command
-and compares every image byte. The macOS updater performs the same readback
-check after its write. This verifies the application bytes; it is not a
+and compares the complete byte stream, including the zero-padded transfer tail.
+The macOS updater performs the same readback check after its write. This verifies
+the written application range; it is not a
 substitute for preserving the full-flash backup.
 
 **Read flash back** — used here to recover the diagnostic trail after a camera
