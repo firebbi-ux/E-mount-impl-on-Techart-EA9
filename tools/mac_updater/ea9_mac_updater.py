@@ -533,6 +533,8 @@ class MainWindow(QMainWindow):
         self.backup_btn = QPushButton()
         self.backup_btn.setEnabled(False)
         self.backup_btn.clicked.connect(self.on_backup)
+        self.load_lens_btn = QPushButton()
+        self.load_lens_btn.clicked.connect(self.on_load_lens_config)
         self.restore_btn = QPushButton()
         self.restore_btn.setEnabled(False)
         self.restore_btn.clicked.connect(self.on_restore)
@@ -542,6 +544,7 @@ class MainWindow(QMainWindow):
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
         btn_row.addWidget(self.backup_btn)
+        btn_row.addWidget(self.load_lens_btn)
         btn_row.addWidget(self.restore_btn)
         btn_row.addWidget(self.write_btn)
         btn_row.addWidget(self.bar)
@@ -707,6 +710,7 @@ class MainWindow(QMainWindow):
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
         self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
+        self.load_lens_btn.setText(self._t("Load lens data from backup", "从本地备份读取镜头数据"))
         self.restore_btn.setText(self._t("Restore from full backup", "从完整备份恢复原固件"))
         self.write_btn.setText(self._t("Flash project TRACE firmware", "烧入项目 TRACE 测试固件"))
         self._refresh_status_text()
@@ -835,22 +839,11 @@ class MainWindow(QMainWindow):
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
-            try:
-                self._load_lens_config_from_backup(self.backup_output_path)
-                msg += self._t(
-                    "\\n\\nLens configuration was read from the saved flash backup and loaded into the form.",
-                    "\\n\\n已从刚保存的 Flash 备份读取镜头配置，并载入参数界面。"
-                )
-                self.status_lbl.setText(msg)
-                QMessageBox.information(self, self.windowTitle(), msg)
-            except Exception as e:
-                logging.exception("Backup succeeded but lens configuration load failed")
-                warn = self._t(
-                    f"\\n\\nBackup is valid, but lens configuration could not be decoded: {e}",
-                    f"\\n\\nFlash 备份已成功，但镜头配置读取失败：{e}"
-                )
-                self.status_lbl.setText(msg + warn)
-                QMessageBox.warning(self, self.windowTitle(), msg + warn)
+            # Backup completion is intentionally independent from lens-config
+            # parsing and UI mutation. Loading is a separate user-triggered action.
+            logging.info("Backup UI completion: showing success dialog")
+            QMessageBox.information(self, self.windowTitle(), msg)
+            logging.info("Backup UI completion: success dialog closed")
         else:
             logging.error("Backup worker reported failure: %s", msg)
             QMessageBox.critical(self, self.windowTitle(), msg)
@@ -858,6 +851,34 @@ class MainWindow(QMainWindow):
         # The backup worker has closed it; normal polling handles later USB events.
         logging.info("Backup completion UI settled; device_ok=%s path_present=%s",
                      self.device_ok, bool(self.seen_path))
+
+    def on_load_lens_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, self._t("Select a local full-flash backup", "选择本地完整 Flash 备份"),
+            os.path.expanduser("~"),
+            "EA9 full-flash backup (*.bin);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "rb") as source:
+                backup = source.read()
+            ea9_safety.validate_backup(backup)
+            with open(path + ".sha256", "r", encoding="ascii") as manifest:
+                ea9_safety.verify_sha256_manifest(backup, manifest.read())
+            self._load_lens_config_from_backup(path)
+            QMessageBox.information(
+                self, self.windowTitle(),
+                self._t("Lens configuration loaded from the verified local backup.",
+                        "已从通过 SHA-256 校验的本地备份载入镜头配置。")
+            )
+        except (Exception, SystemExit) as e:
+            logging.exception("Local backup lens configuration load failed")
+            QMessageBox.warning(
+                self, self.windowTitle(),
+                self._t(f"Could not load lens configuration: {e}",
+                        f"无法读取镜头配置：{e}")
+            )
 
     def _load_lens_config_from_backup(self, path):
         if not path:
