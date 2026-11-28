@@ -6,6 +6,8 @@ import re
 import sys
 import struct
 import hashlib
+import logging
+import faulthandler
 import hid
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QPixmap
@@ -34,6 +36,27 @@ else:
 import cfgblock     # noqa: E402
 import ea9_safety   # noqa: E402
 import gen_optical  # noqa: E402
+
+def _configure_diagnostics():
+    try:
+        log_dir = os.path.join(os.path.expanduser("~"), "Library", "Logs", "EA9ProjectTRACE")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "ea9-trace-lab.log")
+        logging.basicConfig(filename=log_path, level=logging.INFO,
+            format="%(asctime)s %(levelname)s %(threadName)s %(message)s", encoding="utf-8")
+        handle = open(log_path, "a", buffering=1, encoding="utf-8")
+        faulthandler.enable(file=handle, all_threads=True)
+        return handle
+    except Exception:
+        return None
+
+_DIAGNOSTIC_FILE = _configure_diagnostics()
+
+def _handle_uncaught_exception(exc_type, exc_value, exc_tb):
+    logging.critical("Uncaught application exception", exc_info=(exc_type, exc_value, exc_tb))
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _handle_uncaught_exception
 
 VID = 0x0483
 PID = 0x575A
@@ -801,13 +824,16 @@ class MainWindow(QMainWindow):
         self.bar.setValue(0)
         self.backup_output_path = output_path
         self.backup_worker = BackupWorker(self.seen_path, output_path, self.zh)
-        self.backup_worker.progress.connect(
-            lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg))
-        )
+        self.backup_worker.progress.connect(self._on_backup_progress)
         self.backup_worker.completed.connect(self.on_backup_done)
         self.backup_worker.start()
 
+    def _on_backup_progress(self, pct, msg):
+        self.bar.setValue(max(0, min(100, int(pct))))
+        self.status_lbl.setText(str(msg))
+
     def on_backup_done(self, ok, msg):
+        logging.info("Backup worker completed ok=%s message=%r", ok, msg)
         self.busy = False
         if self.device_ok:
             self.backup_btn.setEnabled(True)
@@ -825,6 +851,7 @@ class MainWindow(QMainWindow):
                 self.status_lbl.setText(msg)
                 QMessageBox.information(self, self.windowTitle(), msg)
             except Exception as e:
+                logging.exception("Backup succeeded but lens configuration load failed")
                 warn = self._t(
                     f"\\n\\nBackup is valid, but lens configuration could not be decoded: {e}",
                     f"\\n\\nFlash 备份已成功，但镜头配置读取失败：{e}"
@@ -832,9 +859,12 @@ class MainWindow(QMainWindow):
                 self.status_lbl.setText(msg + warn)
                 QMessageBox.warning(self, self.windowTitle(), msg + warn)
         else:
+            logging.error("Backup worker reported failure: %s", msg)
             QMessageBox.critical(self, self.windowTitle(), msg)
-        self.seen_path = None
-        self.poll_usb()
+        # Do not immediately reopen the HID handle from this completion slot.
+        # The backup worker has closed it; normal polling handles later USB events.
+        logging.info("Backup completion UI settled; device_ok=%s path_present=%s",
+                     self.device_ok, bool(self.seen_path))
 
     def _load_lens_config_from_backup(self, path):
         if not path:
