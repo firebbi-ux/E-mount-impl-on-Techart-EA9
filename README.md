@@ -302,7 +302,7 @@ experimental TRACE build.
 | --- | --- | --- | --- | --- |
 | **debug** | `make` | `build/ea9-rebuild.bin` | `-O1 -DDEBUG` | **written** |
 | **release** | `make release` | `build/ea9-rebuild-release.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG` | **none** |
-| **TRACE (experimental)** | `make trace` | `build/ea9-rebuild-trace.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE` | **4 rotating snapshots** |
+| **TRACE (experimental)** | `make trace` | `build/ea9-rebuild-trace.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE` | **24 rotating 1 KiB snapshots** |
 
 The debug image is the instrumented one: it erases and programs pages at
 `0x16000` as it runs, which is what `--dump` reads back and what every result
