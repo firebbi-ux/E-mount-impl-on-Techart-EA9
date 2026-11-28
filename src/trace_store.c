@@ -16,7 +16,6 @@
 #define TRACE_STORE_HEADER_SIZE NVM_PAGE_SIZE
 #define TRACE_STORE_DATA_SIZE (TRACE_CAPACITY * sizeof(struct trace_record))
 #define TRACE_STORE_SLOT_ROWS (TRACE_STORE_SLOT_SIZE / NVM_ROW_SIZE)
-#define TRACE_STORE_DATA_PAGES ((TRACE_STORE_DATA_SIZE + NVM_PAGE_SIZE - 1u) / NVM_PAGE_SIZE)
 
 typedef char trace_record_must_be_12_bytes[(sizeof(struct trace_record) == 12u) ? 1 : -1];
 typedef char trace_slot_must_be_row_aligned[(TRACE_STORE_SLOT_SIZE % NVM_ROW_SIZE == 0u) ? 1 : -1];
