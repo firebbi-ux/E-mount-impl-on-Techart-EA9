@@ -70,12 +70,12 @@ void nvm_log_write(uint32_t addr, const uint32_t *w, uint32_t words)
 #ifdef EA9_TRACE
 void nvm_trace_erase_row(uint32_t addr)
 {
-\tnvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
+	nvm_erase_row(addr, NVM_LOG_BASE, NVM_LOG_END);
 }
 
 void nvm_trace_write(uint32_t addr, const uint32_t *w, uint32_t words)
 {
-\tnvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
+	nvm_write(addr, w, words, NVM_LOG_BASE, NVM_LOG_END);
 }
 #endif
 
