@@ -13,7 +13,7 @@ int main(void)
  unsigned i,samples=0;
  trace_init(); trace_begin(100,200,0);
  check(g_trace.active,"begin activates trace");
- check(g_trace.retained_count==1,"retained record count starts at one");
+ check(g_trace.retained_count==2,"begin and target records are retained");
  check(g_trace.session_first==0,"session start sequence retained");
  check(g_trace.records[0].kind==TRACE_BEGIN,"begin marker");
  check(g_trace.records[0].pos==100,"begin position retained");
