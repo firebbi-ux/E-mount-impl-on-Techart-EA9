@@ -137,7 +137,7 @@ else
 	      || { echo "  FAIL: TRACE persistence hook missing from linker map"; exit 1; }; \
 	    awk 'index($$0, "nvm_trace_write") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE NVM writer missing from linker map"; exit 1; }; \
-	    awk 'index($0, "nvm_trace_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
+	    awk 'index($$0, "nvm_trace_erase_row") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE NVM eraser missing from linker map"; exit 1; }; \
 	    awk 'index($0, "nvm_trace_read") { found=1 } END { exit !found }' $(TARGET).map \
 	      || { echo "  FAIL: TRACE NVM reader missing from linker map"; exit 1; }; \
