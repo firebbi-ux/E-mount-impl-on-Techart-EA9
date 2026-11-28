@@ -30,7 +30,7 @@ int main(void)
  trace_event_queued(1);
  trace_event_tx(EM_REC_STOP,0x01u);
  check(!g_trace.event_sent,"older queued event is not mistaken for Move");
- trace_event_tx(0x1Du,0x00u);
+ trace_event_tx(EM_REC_MOVE,0x00u);
  check(g_trace.event_sent,"Move event recognized after earlier queue item");
  trace_new_command();
  check(!g_trace.active,"new command cancels observation");
