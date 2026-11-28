@@ -905,8 +905,31 @@ class MainWindow(QMainWindow):
             flash = source.read()
         if len(flash) != 0x20000:
             raise ValueError(f"expected 128 KiB backup, got {len(flash)} bytes")
-        at = cfgblock.find(flash)
-        hw, slots = cfgblock.parse(flash[at:at + cfgblock.SIZE])
+        # A full-flash dump includes bootloader, application and TRACE log.
+        # The CfgAnchor marker may occur outside the application partition
+        # (or as an incidental byte sequence). Only accept a uniquely valid
+        # configuration block inside the application region.
+        app = flash[APP_BASE:APP_SAFE_END]
+        candidates = []
+        pos = 0
+        while True:
+            pos = app.find(cfgblock.MAGIC, pos)
+            if pos < 0:
+                break
+            absolute = APP_BASE + pos
+            if pos + cfgblock.SIZE <= len(app):
+                try:
+                    parsed = cfgblock.parse(app[pos:pos + cfgblock.SIZE])
+                    candidates.append((absolute, parsed))
+                except (Exception, SystemExit):
+                    pass
+            pos += 1
+        if len(candidates) != 1:
+            raise ValueError(
+                "application region contains %d valid lens configuration blocks; "
+                "expected exactly one" % len(candidates)
+            )
+        at, (hw, slots) = candidates[0]
         active = [(i, slot) for i, slot in enumerate(slots) if slot[0] > 0]
         if not active:
             raise ValueError("no configured lens slots found")
