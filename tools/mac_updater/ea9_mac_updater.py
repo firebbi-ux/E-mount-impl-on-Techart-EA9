@@ -770,13 +770,13 @@ class MainWindow(QMainWindow):
         if len(active) == 1:
             _, (mm, name, xpd) = active[0]
             lines.append(self._t(
-                f"Single lens: {mm} mm, exit pupil {xpd:g} mm, \\"{name}\\"",
+                f'Single lens: {mm} mm, exit pupil {xpd:g} mm, "{name}"',
                 f"单镜头：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
             ))
         else:
             for i, (mm, name, xpd) in active:
                 lines.append(self._t(
-                    f"{SLOT_APERTURES[i]}: {mm} mm, exit pupil {xpd:g} mm, \\"{name}\\"",
+                    f'{SLOT_APERTURES[i]}: {mm} mm, exit pupil {xpd:g} mm, "{name}"',
                     f"{SLOT_APERTURES[i]}：{mm} mm，出瞳 {xpd:g} mm，“{name}”"
                 ))
         prompt = self._t(
