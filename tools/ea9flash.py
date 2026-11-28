@@ -76,6 +76,8 @@ CMD_READ = bytes((0x03, 0x03))
 
 REPORT_LEN = 64
 CHUNK = 64
+APP_BASE = 0x00005000
+APP_SAFE_END = 0x00016000  # LOG region begins here
 
 DEFAULT_VID = 0x0483
 DEFAULT_PID = 0x575A
@@ -257,7 +259,38 @@ def parse_version(s):
     return out
 
 
+def transfer_length(image_len):
+    """Bytes the current ACK-clocked loop writes, including its final chunk."""
+    limit = (image_len // 1024) * 1024 + 1024
+    return limit + CHUNK  # loop condition is pos <= limit
+
+
+def verify_image(dev, image, base=APP_BASE, progress=True):
+    """Read the application back through READ and compare it byte-for-byte."""
+    for offset in range(0, len(image), CHUNK):
+        actual = dev.read_at(base + offset)
+        expected = image[offset:offset + CHUNK]
+        if actual[:len(expected)] != expected:
+            for i, (a, e) in enumerate(zip(actual, expected)):
+                if a != e:
+                    raise IOError(
+                        "readback mismatch at flash 0x%08x: expected %02x, got %02x"
+                        % (base + offset + i, e, a)
+                    )
+            raise IOError("short readback at flash 0x%08x" % (base + offset))
+        if progress and (offset + CHUNK) % 4096 == 0:
+            print("  verified %d/%d bytes" % (min(offset + CHUNK, len(image)), len(image)))
+    if progress:
+        print("  readback matches all %d image bytes" % len(image))
+
+
 def flash(dev, image, declare=None, progress=True):
+    written = transfer_length(len(image))
+    if APP_BASE + written > APP_SAFE_END:
+        raise ValueError(
+            "image plus bootloader padding would end at 0x%08x, past the LOG boundary 0x%08x"
+            % (APP_BASE + written, APP_SAFE_END)
+        )
     ver = dev.check()
     print("device reports version %d.%d.%d" % ver)
 
@@ -308,6 +341,8 @@ def main():
     ap.add_argument("-d", "--device", help="explicit /dev/hidrawN")
     ap.add_argument("--check", action="store_true",
                     help="query the device version and exit (safe, read-only)")
+    ap.add_argument("--verify", action="store_true",
+                    help="after flashing, read the app back over USB and compare every image byte")
     ap.add_argument("--declare-version", metavar="M.m.p", type=parse_version,
                     help="version to record in START[6..8], i.e. what --check "
                          "will report afterwards. This is bootloader-side "
@@ -410,6 +445,9 @@ def main():
                 sys.exit("aborted")
 
         flash(dev, image, declare=args.declare_version)
+        if args.verify:
+            print("verifying application readback from 0x%08x" % APP_BASE)
+            verify_image(dev, image)
 
 
 if __name__ == "__main__":
