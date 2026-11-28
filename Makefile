@@ -69,6 +69,12 @@ OPT     := -O2
 # callers' page-building code is dead and goes with it.
 CONFIG  := -DNDEBUG -DEA9_NO_LOG
 LOGSRCS :=
+else ifeq ($(BUILD),trace)
+OBJDIR  := $(OUT)/obj-trace
+TARGET  := $(OUT)/ea9-rebuild-trace
+OPT     := -O2
+CONFIG  := -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE
+LOGSRCS := src/trace.c
 else
 $(error BUILD must be debug or release, not "$(BUILD)")
 endif
@@ -142,6 +148,9 @@ endif
 release:
 	@$(MAKE) --no-print-directory BUILD=release all
 
+trace:
+	@$(MAKE) --no-print-directory BUILD=trace all
+
 debug:
 	@$(MAKE) --no-print-directory BUILD=debug all
 
@@ -199,10 +208,13 @@ hosttest:
 	  tools/hosttest/test_focus_dist.c src/focus_dist.c -lm \
 	  -o $(HOSTTEST)/test_focus_dist
 	@$(HOSTTEST)/test_focus_dist
+	$(HOSTCC) -std=gnu99 -Wall -Wextra -O1 -DEA9_TRACE -Itools/hosttest -Isrc \
+	  tools/hosttest/test_trace.c src/trace.c -o $(HOSTTEST)/test_trace
+	@$(HOSTTEST)/test_trace
 
 clean:
 	rm -rf $(OUT)
 
 -include $(DEPS)
 
-.PHONY: all debug release hosttest clean
+.PHONY: all debug release trace hosttest clean

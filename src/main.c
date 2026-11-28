@@ -48,6 +48,7 @@
 #include "lens_cfg.h"
 #include "trail.h"
 #include "vdd.h"
+#include "trace.h"
 
 #define MOTOR_PAGE0     28u
 #define TRACE_PAGE0     24u
@@ -1487,6 +1488,7 @@ static uint8_t focus_retarget(int32_t *target)
 	 * leg is that Move's, and answers it when it ends. */
 	if (c.silent && !g_leg_silent) {
 		em_post_event(EM_REC_MOVE, 0x00u);
+		trace_event_queued();
 	}
 	g_leg_silent  = c.silent;
 	g_last_target = c.target;
@@ -1526,6 +1528,7 @@ static uint8_t focus_run(int32_t want, uint16_t target_u,
 	delta = want - here;
 
 	if (delta > -FOCUS_DEADBAND_COUNTS && delta < FOCUS_DEADBAND_COUNTS) {
+		trace_begin(here, want, SERVO_OK, em_events_sent);
 		/* "A target equal to the current position still counts as
 		 * completed, and is reported as such" (autofocus.md 3.1 rule
 		 * 5).  A body waiting for an acknowledgement must not be left
@@ -1543,6 +1546,7 @@ static uint8_t focus_run(int32_t want, uint16_t target_u,
 	forecast_model(cfg);
 	servo_move_rel(delta, cfg, &r);
 	g_moving      = 0;
+	trace_begin(r.end, want, r.outcome, em_events_sent);
 	focus_report();
 
 	for (i = 0; i < 16; i++) {
@@ -1898,6 +1902,7 @@ static void focus_exec(const struct em_focus_cmd *c)
 	if (!g_homed) {
 		return;                 /* zero is not infinity yet */
 	}
+	trace_new_command();
 	g_last_op       = c->op;
 	g_abort_pending = 0;
 	g_abort_by_stop = 0;
@@ -2017,6 +2022,7 @@ int main(void)
 	 * this is chosen on principle, not on evidence -- which is why it is
 	 * one ordering and not a switch. */
 	board_init_pins();
+	trace_init();
 
 	clock_init();
 	delay_init();
@@ -2065,6 +2071,7 @@ int main(void)
 
 	for (;;) {
 		em_poll();
+		trace_event_tx(em_events_sent);
 		m34_deadline();
 
 		/* If the handshake has not completed by two seconds it is not
@@ -2223,6 +2230,8 @@ int main(void)
 
 		/* LAST, and only when nothing above has work: a new lens entry
 		 * takes a restart, and that waits for everything else. */
+		trace_service();
+
 		if (em_restart_due) {
 			lens_restart();
 		} else if (em_ap_reset_due) {
