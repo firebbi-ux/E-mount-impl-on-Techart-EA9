@@ -45,8 +45,7 @@ def restore_application_payload(data):
 
 def make_sha256_manifest(data):
     import hashlib
-    return hashlib.sha256(data).hexdigest() + "\\n"
-
+    return hashlib.sha256(data).hexdigest() + "\n"
 
 def verify_sha256_manifest(data, manifest_text):
     import hashlib
