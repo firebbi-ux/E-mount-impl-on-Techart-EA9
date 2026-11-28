@@ -263,9 +263,9 @@ class BackupWorker(QThread):
                                 f"\nWarning: backup succeeded, but lens TXT generation failed: {sidecar_error}")
                 logging.exception("Lens TXT sidecar generation failed")
             self.completed.emit(True, (
-                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}{sidecar_note}\n未发送任何写入指令。现在可以安全拔下 USB 线。"
+                f"当前全部设置已成功读取并备份（完整 Flash，128 KiB）。\nSHA-256：{digest}{sidecar_note}\n未发送任何写入指令。现在可以安全拔下 USB 线。"
                 if self.zh else
-                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}{sidecar_note}\nNo write command was sent. You may safely unplug the USB cable."
+                f"Current firmware and complete flash backup saved (128 KiB).\nSHA-256: {digest}{sidecar_note}\nNo write command was sent. You may safely unplug the USB cable."
             ))
         except Exception as e:
             self.completed.emit(False, (
@@ -564,17 +564,17 @@ class MainWindow(QMainWindow):
         self.backup_btn.clicked.connect(self.on_backup)
         self.load_lens_btn = QPushButton()
         self.load_lens_btn.clicked.connect(self.on_load_lens_config)
-        self.new_lens_btn = QPushButton()
-        self.new_lens_btn.clicked.connect(self.on_new_lens_config)
         self.save_lens_btn = QPushButton()
         self.save_lens_btn.clicked.connect(self.on_save_lens_config)
-        for button in (self.backup_btn, self.load_lens_btn, self.new_lens_btn, self.save_lens_btn):
+        self.write_lens_btn = QPushButton()
+        self.write_lens_btn.setEnabled(False)
+        self.write_lens_btn.clicked.connect(self.on_write_lens_config)
+        for button in (self.load_lens_btn, self.save_lens_btn, self.write_lens_btn):
             button.setMinimumHeight(30)
             button.setMaximumHeight(34)
-        backup_actions.addWidget(self.backup_btn, 0, 0)
-        backup_actions.addWidget(self.load_lens_btn, 0, 1)
-        backup_actions.addWidget(self.new_lens_btn, 1, 0)
-        backup_actions.addWidget(self.save_lens_btn, 1, 1)
+        backup_actions.addWidget(self.load_lens_btn, 0, 0, 1, 2)
+        backup_actions.addWidget(self.save_lens_btn, 1, 0, 1, 2)
+        backup_actions.addWidget(self.write_lens_btn, 2, 0, 1, 2)
 
         device_group = QGroupBox()
         device_actions = QVBoxLayout(device_group)
@@ -584,10 +584,11 @@ class MainWindow(QMainWindow):
         self.restore_btn.clicked.connect(self.on_restore)
         self.write_btn = QPushButton()
         self.write_btn.setEnabled(False)
-        self.write_btn.clicked.connect(self.on_write)
-        for button in (self.restore_btn, self.write_btn):
+        self.write_btn.clicked.connect(self.on_write_firmware)
+        for button in (self.backup_btn, self.restore_btn, self.write_btn):
             button.setMinimumHeight(30)
             button.setMaximumHeight(34)
+        device_actions.addWidget(self.backup_btn)
         device_actions.addWidget(self.restore_btn)
         device_actions.addWidget(self.write_btn)
 
@@ -760,12 +761,12 @@ class MainWindow(QMainWindow):
         )
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
-        self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
-        self.load_lens_btn.setText(self._t("Open lens TXT", "打开镜头 TXT"))
-        self.new_lens_btn.setText(self._t("New lens TXT", "新建镜头 TXT"))
-        self.save_lens_btn.setText(self._t("Save lens TXT", "保存镜头 TXT"))
-        self.restore_btn.setText(self._t("Restore from full backup", "从完整备份恢复原固件"))
-        self.write_btn.setText(self._t("Flash project TRACE firmware", "烧入项目 TRACE 测试固件"))
+        self.backup_btn.setText(self._t("Read and back up current firmware", "读取并备份当前固件"))
+        self.load_lens_btn.setText(self._t("Open lens configuration file", "打开镜头配置文件"))
+        self.save_lens_btn.setText(self._t("Save lens configuration file", "保存镜头配置文件"))
+        self.write_lens_btn.setText(self._t("Write lens configuration", "写入镜头配置"))
+        self.restore_btn.setText(self._t("Restore firmware from backup", "从备份恢复固件"))
+        self.write_btn.setText(self._t("Write new firmware", "写入新固件"))
         self._refresh_status_text()
 
     def _refresh_status_text(self):
@@ -830,6 +831,7 @@ class MainWindow(QMainWindow):
         self.device_ok = False
         self.boot_ver = None
         self.write_btn.setEnabled(False)
+        self.write_lens_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
         if path is None:
@@ -841,6 +843,7 @@ class MainWindow(QMainWindow):
             self.device_ok = True
             self._refresh_status_text()
             self.write_btn.setEnabled(True)
+            self.write_lens_btn.setEnabled(True)
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
         except Exception as e:
@@ -871,6 +874,7 @@ class MainWindow(QMainWindow):
         self.busy = True
         self.backup_btn.setEnabled(False)
         self.write_btn.setEnabled(False)
+        self.write_lens_btn.setEnabled(False)
         self.bar.setValue(0)
         self.backup_output_path = output_path
         self.backup_worker = BackupWorker(self.seen_path, output_path, self.zh)
@@ -927,28 +931,7 @@ class MainWindow(QMainWindow):
                 x.setValue(float(xpd) if mm else 45.0)
         self.update_mode()
 
-    def on_new_lens_config(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, self._t("Create EA9 lens TXT template", "新建 EA9 镜头 TXT 模板"),
-            os.path.join(os.path.expanduser("~"), "ea9-lens-config.txt"),
-            "EA9 lens configuration (*.txt)"
-        )
-        if not path:
-            return
-        if not path.lower().endswith(".txt"):
-            path += ".txt"
-        try:
-            template = lens_config_txt.format_txt([(0, "", 0.0)] * 8, allow_empty=True)
-            with open(path, "w", encoding="utf-8") as target:
-                target.write(template)
-            self._apply_lens_slots([(0, "", 0.0)] * 8)
-            self.multi_radio.setChecked(True)
-            self.status_lbl.setText(self._t(f"Created lens TXT template: {path}",
-                                             f"已新建镜头 TXT 模板：{path}"))
-        except Exception as e:
-            QMessageBox.critical(self, self.windowTitle(), str(e))
-
-    def on_load_lens_config(self):
+     def on_load_lens_config(self):
         path, _ = QFileDialog.getOpenFileName(
             self, self._t("Open EA9 lens TXT", "打开 EA9 镜头 TXT"),
             os.path.expanduser("~"), "EA9 lens configuration (*.txt);;Text files (*.txt)"
@@ -1033,8 +1016,33 @@ class MainWindow(QMainWindow):
             raise ValueError(self._t("Enter at least one lens focal length.", "请至少配置一支镜头的焦距。"))
         return hw, slots
 
-    def on_write(self):
-        if not self.device_ok or not self.seen_path or self.base_image is None:
+    def on_write_firmware(self):
+        if not self.device_ok or not self.seen_path or self.base_image is None or self.busy:
+            return
+        digest = hashlib.sha256(self.base_image).hexdigest()
+        prompt = self._t(
+            "The bundled project TRACE test firmware will be written to the application area. "
+            "The application is read back and verified; the bootloader and TRACE log region are not written. "
+            "Make a full 128 KiB backup first. Continue?",
+            "即将写入当前版本内置的 TRACE 测试固件。应用区写入后会完整回读校验；"
+            "引导区和 TRACE 日志区不会写入。请先完成 128 KiB 完整备份。确认继续？"
+        ) + "\n\nSHA-256: " + digest
+        if QMessageBox.question(self, self.windowTitle(), prompt,
+                                QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
+            return
+        self.busy = True
+        self.write_btn.setEnabled(False)
+        self.write_lens_btn.setEnabled(False)
+        self.backup_btn.setEnabled(False)
+        self.restore_btn.setEnabled(False)
+        self.bar.setValue(0)
+        self.worker = FlashWorker(self.seen_path, self.base_image, self.declare_ver, self.zh)
+        self.worker.progress.connect(lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg)))
+        self.worker.finished.connect(self.on_done)
+        self.worker.start()
+
+    def on_write_lens_config(self):
+        if not self.device_ok or not self.seen_path or self.base_image is None or self.busy:
             return
         try:
             hw, slots = self._collect_slots()
@@ -1083,6 +1091,7 @@ class MainWindow(QMainWindow):
             return
         self.busy = True
         self.write_btn.setEnabled(False)
+        self.write_lens_btn.setEnabled(False)
         self.backup_btn.setEnabled(False)
         self.restore_btn.setEnabled(False)
         self.bar.setValue(0)
@@ -1096,6 +1105,8 @@ class MainWindow(QMainWindow):
         if self.device_ok:
             self.backup_btn.setEnabled(True)
             self.restore_btn.setEnabled(True)
+            self.write_btn.setEnabled(True)
+            self.write_lens_btn.setEnabled(True)
         self.status_lbl.setText(msg)
         if ok:
             self.bar.setValue(100)
@@ -1103,6 +1114,7 @@ class MainWindow(QMainWindow):
             self.backup_btn.setEnabled(False)
             self.restore_btn.setEnabled(False)
             self.write_btn.setEnabled(False)
+            self.write_lens_btn.setEnabled(False)
             self.device_lbl.setText(self._t("Firmware written", "固件已写入"))
             QMessageBox.information(self, self.windowTitle(), msg)
         else:
