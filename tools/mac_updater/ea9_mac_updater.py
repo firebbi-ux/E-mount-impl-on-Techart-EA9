@@ -759,7 +759,8 @@ class MainWindow(QMainWindow):
             patched = bytearray(self.base_image)
             patched[at:at + cfgblock.SIZE] = block
             patched = bytes(patched)
-            cfgblock.parse(patched[at:at + cfgblock.SIZE])
+            if patched[at:at + cfgblock.SIZE] != block:
+                raise ValueError("Lens configuration block verification failed")
         except (ValueError, SystemExit) as e:
             QMessageBox.warning(self, self.windowTitle(), str(e))
             return
