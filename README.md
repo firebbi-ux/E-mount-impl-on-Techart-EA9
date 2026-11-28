@@ -302,7 +302,7 @@ experimental TRACE build.
 | --- | --- | --- | --- | --- |
 | **debug** | `make` | `build/ea9-rebuild.bin` | `-O1 -DDEBUG` | **written** |
 | **release** | `make release` | `build/ea9-rebuild-release.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG` | **none** |
-| **TRACE (experimental)** | `make trace` | `build/ea9-rebuild-trace.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE` | **RAM only** |
+| **TRACE (experimental)** | `make trace` | `build/ea9-rebuild-trace.bin` | `-O2 -DNDEBUG -DEA9_NO_LOG -DEA9_TRACE` | **4 rotating snapshots** |
 
 The debug image is the instrumented one: it erases and programs pages at
 `0x16000` as it runs, which is what `--dump` reads back and what every result
@@ -328,18 +328,27 @@ Each configuration has its own object directory (`build/obj-debug`,
 the image — which has cost this project camera runs before (§21, §43, §51).
 
 The TRACE image is a separate investigation build, not a release candidate.
-It keeps a 256-record ring in RAM (12 bytes per record): each session stores
+It keeps a 256-record RAM ring (12 bytes per record): each focus session stores
 its start position and target, then position samples at an approximately 5 ms
 cadence for up to one second, plus event-queued / event-sent / cancelled /
-finished markers. The start and target records share a timestamp. The ring is
-volatile: it is lost on reset or power removal, and the current `--dump`
-command cannot retrieve it. **Do not flash TRACE expecting the trace to be
-available through USB yet.**
+finished markers. The start and target records share a timestamp.
 
-TRACE uses `src/ea9_trace.ld`, which caps the application load image at
-`0x16000`, before the LOG region. Its diagnostic LOG writer is compiled out;
-the existing CFG writer remains enabled for lens configuration in
-`0x1C000–0x1D000`. TRACE itself does not write its RAM records to flash.
+At camera shutdown, after the `0x16` acknowledgement has been sent and its
+50 ms wire-settle delay has elapsed, but before UART shutdown and TX-low, TRACE
+copies the retained ring into one of four rotating 6 KiB slots in
+`0x16000–0x1C000`. Each slot is erased independently; record data is written
+first and a CRC-protected header last, so an interrupted save is not mistaken
+for a valid snapshot. The TRACE-only NVM writer is range-checked to LOG and
+cannot address the application, bootloader, or CFG region. Diagnostic LOG
+writers remain compiled out; the existing CFG writer remains enabled in
+`0x1C000–0x1D000`.
+
+A full 256-record save requires 24 row erases and 48 data-page programs plus
+the header page. This happens only in the post-acknowledgement power-down path,
+not during focus, servo, or status-frame processing. The body's documented RXD
+low wait is up to 30 seconds; the save delays the subsequent TX-low transition,
+not the shutdown acknowledgement itself. This timing still requires real
+hardware validation before treating the TRACE image as safe to flash.
 
 The debug, release, and TRACE images are **different binaries**, so results from one build do not automatically validate another. `make hosttest` exercises the same
 sources either way, but the optimisation level is not the one the recorded
