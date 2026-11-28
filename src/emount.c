@@ -1911,13 +1911,14 @@ static int32_t forecast06(int32_t left, int8_t m)
 		return 0;
 	}
 	/* A commanded move is not evidence that the mechanism has started.
-	 * Until both the last-eighth velocity estimate and the whole-frame
-	 * displacement are zero, the encoder has not observed breakaway.
-	 * Do not publish the model's full-duty acceleration as real travel:
+	 * Whole-frame displacement may be left over from the preceding
+	 * motion even though the mechanism is now stationary.  Require the
+	 * last-eighth velocity estimate to observe real movement before
+	 * publishing the model's full-duty acceleration as measured travel:
 	 * the body uses this one-frame-ahead value to associate AF samples
 	 * with focus positions.  em_reach() deliberately keeps its from-rest
 	 * model; this guard is only for the measured status forecast. */
-	if (g_v0_q8 == 0 && g_frame_disp == 0) {
+	if (g_v0_q8 == 0) {
 		return 0;
 	}
 	x = reach_q8((uint32_t)(g_v0_q8 * dir),

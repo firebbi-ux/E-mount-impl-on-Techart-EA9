@@ -1720,9 +1720,9 @@ int main(void)
 			fail("at rest pl[20..21] %u pl[2..3] %u, want 5000 5000",
 			     POS(0x1A), POS(0x08));
 		}
-		/* A motor command alone is not measured motion.  With neither a
-		 * last-eighth velocity nor whole-frame displacement, the forecast
-		 * must stay at the latch rather than inventing acceleration. */
+		/* A motor command alone is not measured motion.  The previous
+		 * frame can still have displacement from the approach leg, but
+		 * with zero last-eighth velocity we must not invent a new launch. */
 		em_set_forecast_model(6250u, 11431u, 26u);
 		em_frame_period_ms = 17u;
 		em_set_motor(1);
@@ -1736,10 +1736,20 @@ int main(void)
 		}
 		host_frame_sync();
 		em_sample_position(5080);
-		em_set_focus_position(5090, 5100);
+		{
+			unsigned t;
+
+			for (t = 1; t <= 16; t++) {
+				host_millis += 1;
+				em_sample_position((int32_t)(5080 + t));
+			}
+			host_millis += 1;
+		}
+		em_set_focus_position(5096, 5100);
+		host_frame_sync();
 		before = sent_n; em_poll(); f = sent[before + 1];
 		if (POS(0x08) != 5100) {
-			fail("forecast %u passed the target 5100", POS(0x08));
+			fail("forecast %u did not clamp at target 5100", POS(0x08));
 		}
 		/* Moving away from the target: no forecast past where it is. */
 		em_set_motor(-1);
@@ -1799,8 +1809,16 @@ int main(void)
 		em_set_motor(1);
 		host_frame_sync();
 		em_sample_position(5000);
+		{
+			unsigned t;
+
+			for (t = 1; t <= 16; t++) {
+				host_millis += 1;
+				em_sample_position((int32_t)(5000 + 600 * t / 16));
+			}
+			host_millis += 1;
+		}
 		host_frame_sync();
-		em_sample_position(5600);
 		em_set_focus_position(5600, 99999);
 		before = sent_n; em_poll(); f = sent[before + 1];
 		if (POS(0x08) != ENC_TRAVEL_HI) {
