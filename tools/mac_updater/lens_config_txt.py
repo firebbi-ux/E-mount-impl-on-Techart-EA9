@@ -106,5 +106,8 @@ def slots_from_flash(flash):
     block = flash[start:start + cfgblock.SIZE]
     if len(block) != cfgblock.SIZE or not block.startswith(cfgblock.MAGIC):
         raise ValueError("固定镜头配置区 0x%05X 未找到有效配置；未对全盘搜索" % start)
-    _, slots = cfgblock.parse(block)
+    try:
+        _, slots = cfgblock.parse(block)
+    except SystemExit as error:
+        raise ValueError("固定镜头配置区校验失败：%s" % error)
     return _validate_slots(slots)
