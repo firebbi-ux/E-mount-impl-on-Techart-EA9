@@ -21,6 +21,8 @@ typedef char trace_record_must_be_12_bytes[(sizeof(struct trace_record) == 12u) 
 typedef char trace_slot_must_be_row_aligned[(TRACE_STORE_SLOT_SIZE % NVM_ROW_SIZE == 0u) ? 1 : -1];
 typedef char trace_data_must_fit_slot[(TRACE_STORE_HEADER_SIZE + TRACE_STORE_DATA_SIZE <= TRACE_STORE_SLOT_SIZE) ? 1 : -1];
 
+static uint32_t g_last_saved_write_count;
+
 static uint32_t crc32_update(uint32_t crc, uint8_t byte)
 {
     unsigned bit;
@@ -80,6 +82,17 @@ static uint32_t record_byte(uint32_t logical_byte, uint32_t first)
     return p[byte_index];
 }
 
+static uint32_t readback_crc(uint32_t base, uint32_t length)
+{
+    uint32_t page[16], crc = 0xFFFFFFFFu, offset, i;
+    for (offset = 0; offset < length; offset += NVM_PAGE_SIZE) {
+        nvm_trace_read(base + offset, page, 16u);
+        for (i = 0; i < NVM_PAGE_SIZE && offset + i < length; i++)
+            crc = crc32_update(crc, ((const uint8_t *)page)[i]);
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
 /* Returns 1 only after the final, CRC-protected header page is committed. */
 int trace_save(void)
 {
@@ -89,7 +102,8 @@ int trace_save(void)
     unsigned slot, row;
     uint32_t sequence;
 
-    if (count == 0u || count > TRACE_CAPACITY) return 0;
+    if (count == 0u || count > TRACE_CAPACITY
+        || g_trace.write_count == g_last_saved_write_count) return 0;
 
     first = g_trace.write_count - count;
     total_bytes = count * (uint32_t)sizeof(struct trace_record);
@@ -120,6 +134,10 @@ int trace_save(void)
                         + page_no * NVM_PAGE_SIZE, page, 16u);
     }
 
+    /* Verify the programmed data before making the slot visible. */
+    if (readback_crc(slot_base(slot) + TRACE_STORE_HEADER_SIZE, total_bytes) != crc)
+        return 0;
+
     /* Commit marker/header is last. Header CRC excludes word 12 itself. */
     for (i = 0; i < 16; i++) header[i] = 0xFFFFFFFFu;
     header[0]  = TRACE_STORE_MAGIC;
@@ -136,5 +154,11 @@ int trace_save(void)
     header[11] = crc;
     header[12] = crc32_bytes((const uint8_t *)header, 12u * sizeof(uint32_t));
     nvm_trace_write(slot_base(slot), header, 16u);
+    {
+        uint32_t verify[16];
+        if (!read_header(slot, verify) || verify[2] != sequence
+            || verify[3] != count || verify[11] != crc) return 0;
+    }
+    g_last_saved_write_count = g_trace.write_count;
     return 1;
 }
