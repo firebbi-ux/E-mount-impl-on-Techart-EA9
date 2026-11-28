@@ -69,7 +69,7 @@ static uint32_t crc32(const uint8_t *p, uint32_t n)
 
 static const uint32_t *header(unsigned slot)
 {
-    return (const uint32_t *)(flash_image + slot * 0x1800u);
+    return (const uint32_t *)(flash_image + slot * 0x400u);
 }
 
 int main(void)
@@ -88,23 +88,23 @@ int main(void)
     }
     check(g_trace.retained_count == TRACE_CAPACITY, "ring fills before snapshot");
     check(trace_save(), "first snapshot committed");
-    check(erase_calls == 24u, "one save erases exactly one 6 KiB slot");
-    check(write_calls == 49u, "full ring writes 48 data pages plus one header");
+    check(erase_calls == 4u, "one save erases exactly one 1 KiB slot");
+    check(write_calls == 16u, "snapshot writes 15 data pages plus one header");
     check(first_write_addr == NVM_LOG_BASE + 64u,
           "record data is programmed before the header");
     check(last_write_addr == NVM_LOG_BASE,
           "CRC-protected header is the final flash program");
     check(!trace_save(), "unchanged ring is not written a second time");
-    check(erase_calls == 24u, "duplicate save does not erase another slot");
+    check(erase_calls == 4u, "duplicate save does not erase another slot");
     h = header(0);
     count = h[3];
     bytes = count * sizeof(struct trace_record);
     check(h[0] == 0x45545243u && h[1] == 1u, "header magic/version");
-    check(h[2] == 1u && count == TRACE_CAPACITY, "first slot sequence and count");
+    check(h[2] == 1u && count == 80u, "first slot sequence and capped count");
     check(h[12] == crc32((const uint8_t *)h, 12u * sizeof(uint32_t)), "header CRC");
     data = flash_image + 64u;
     check(h[11] == crc32(data, bytes), "record stream CRC");
-    expected_first = g_trace.write_count - g_trace.retained_count;
+    expected_first = g_trace.write_count - count;
     check(memcmp(data, &g_trace.records[expected_first % TRACE_CAPACITY],
                  sizeof(struct trace_record)) == 0, "snapshot begins at oldest retained record");
 
@@ -114,12 +114,12 @@ int main(void)
     check(header(1)[2] == 2u, "second save rotates to next slot");
     check(header(0)[2] == 1u, "previous valid slot survives rotation");
 
-    for (i = 0; i < 3u; i++) {
+    for (i = 0; i < 23u; i++) {
         now_us += 1000u;
         trace_begin((int32_t)i, (int32_t)i + 1, 0);
         check(trace_save(), "subsequent snapshot committed");
     }
-    check(header(0)[2] == 5u, "fifth save reuses oldest slot");
+    check(header(0)[2] == 25u, "twenty-fifth save reuses oldest slot");
     check(header(1)[2] == 2u, "other recent slot remains intact");
     /* Failure injection: a failed NVM operation must leave the slot uncommitted. */
     memset(flash_image, 0xFF, sizeof(flash_image));
