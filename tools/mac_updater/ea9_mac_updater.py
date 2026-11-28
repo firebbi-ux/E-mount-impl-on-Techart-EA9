@@ -197,9 +197,9 @@ class BackupWorker(QThread):
                 target.flush()
                 os.fsync(target.fileno())
             self.completed.emit(True, (
-                f"完整 Flash 备份完成（128 KiB）。\\nSHA-256：{digest}\\n未发送任何写入指令。"
+                f"完整 Flash 备份完成（128 KiB）。\nSHA-256：{digest}\n未发送任何写入指令。"
                 if self.zh else
-                f"Full flash backup complete (128 KiB).\\nSHA-256: {digest}\\nNo write command was sent."
+                f"Full flash backup complete (128 KiB).\nSHA-256: {digest}\nNo write command was sent."
             ))
         except Exception as e:
             self.completed.emit(False, (
@@ -691,6 +691,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, self.windowTitle(), msg)
         else:
             QMessageBox.critical(self, self.windowTitle(), msg)
+        self.seen_path = None
         self.poll_usb()
 
     def _collect_slots(self):
