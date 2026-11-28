@@ -19,6 +19,7 @@ int main(void)
  check(g_trace.records[0].pos==100,"begin position retained");
  check(g_trace.records[1].kind==TRACE_TARGET,"target marker");
  check(g_trace.records[1].pos==200,"target position retained per session");
+ check(g_trace.records[0].t_us==g_trace.records[1].t_us,"begin and target share one timestamp");
  trace_event_queued(0);
  check(g_trace.records[2].kind==TRACE_EVENT_QUEUED,"queue marker");
  trace_event_tx(EM_REC_MOVE,0x00u);
