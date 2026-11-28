@@ -1390,8 +1390,12 @@ static uint8_t focus_drive_absorb(const struct em_focus_cmd *c)
 	g_last_op           = EM_OP_DRIVE;
 	g_drive_vel         = c->drive_vel;
 	g_drive_param       = c->drive_param;
-	g_live_cfg.v_cruise = drive_v_cruise(c->drive_vel);
-	g_live_cfg.stop_ms  = SCAN_STOP_MS;
+	/* A Drive can take over a Scan mid-leg.  Restore the ordinary
+	 * breakaway profile before the AF-C Drive continues. */
+	g_live_cfg.boost_up  = STOCK.boost_up;
+	g_live_cfg.boost_max = STOCK.boost_max;
+	g_live_cfg.v_cruise  = drive_v_cruise(c->drive_vel);
+	g_live_cfg.stop_ms   = SCAN_STOP_MS;
 	forecast_model(&g_live_cfg);
 
 	g_absorb_target  = (dir > 0) ? FOCUS_TRAVEL_COUNTS : 0;
@@ -1639,6 +1643,10 @@ static void focus_report_cut(uint8_t running, uint8_t drive_param)
 /* The least run-up and run-out, at any speed. */
 #define SCAN_RUNUP_COUNTS   300
 #define SCAN_RUNOUT_COUNTS  240
+/* The measured 64/cycle breakaway rate is confined to Scan legs.  Ordinary
+ * Move, MF return and Drive retain STOCK's existing 12/800 settings. */
+#define SCAN_BOOST_UP       64
+#define SCAN_BOOST_MAX      1080
 
 /* Leg 1, the approach (focus_scan): braking over the last ~15 ms of travel,
  * an arrival band of +-100 counts, and arrived once under 3 counts/ms --
@@ -1757,6 +1765,8 @@ static void focus_scan(const struct em_focus_cmd *c)
 	}
 	g_live_cfg           = STOCK;
 	g_live_cfg.v_cruise  = SCAN_V_MAX;
+	g_live_cfg.boost_up  = SCAN_BOOST_UP;
+	g_live_cfg.boost_max = SCAN_BOOST_MAX;
 	g_live_cfg.stop_ms   = SCAN_APPROACH_STOP_MS;
 	g_live_cfg.tolerance = SCAN_APPROACH_TOL;
 	g_live_cfg.v_arrive  = SCAN_APPROACH_V_ARRIVE;
@@ -1779,6 +1789,8 @@ static void focus_scan(const struct em_focus_cmd *c)
 	em_scan_launch();
 	g_live_cfg          = STOCK;
 	g_live_cfg.v_cruise = v;
+	g_live_cfg.boost_up = SCAN_BOOST_UP;
+	g_live_cfg.boost_max = SCAN_BOOST_MAX;
 	outcome = focus_run(finish, focus_counts_to_em06(finish), &g_live_cfg);
 	if (g_last_op == EM_OP_DRIVE) {
 		focus_drive_end(outcome);       /* a Drive took the sweep over */
