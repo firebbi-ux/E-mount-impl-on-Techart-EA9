@@ -5,12 +5,13 @@ import os
 import re
 import sys
 import struct
+import hashlib
 import hid
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QComboBox, QDialog, QDialogButtonBox,
-    QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QDoubleSpinBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QProgressBar, QPushButton, QRadioButton,
     QTextEdit, QVBoxLayout, QWidget,
 )
@@ -156,6 +157,56 @@ class HidBootloader:
         return rep
 
 
+class BackupWorker(QThread):
+    progress = Signal(int, str)
+    completed = Signal(bool, str)
+
+    def __init__(self, path, output_path, zh):
+        super().__init__()
+        self.path = path
+        self.output_path = output_path
+        self.zh = zh
+
+    def run(self):
+        try:
+            total = 0x20000
+            data = bytearray()
+            with HidBootloader(self.path) as dev:
+                version = dev.check()
+                self.progress.emit(0, (
+                    f"已连接引导程序 {version[0]}.{version[1]}.{version[2]}，开始只读备份…"
+                    if self.zh else
+                    f"Bootloader {version[0]}.{version[1]}.{version[2]} connected; starting read-only backup..."
+                ))
+                for address in range(0, total, REPORT_LEN):
+                    chunk = dev.read_at(address)
+                    if chunk is None or len(chunk) != REPORT_LEN:
+                        raise IOError(f"Invalid READ response at 0x{address:05x}")
+                    data.extend(chunk)
+                    pct = min(100, len(data) * 100 // total)
+                    if pct % 5 == 0:
+                        self.progress.emit(pct, (
+                            f"只读备份中… {pct}%"
+                            if self.zh else f"Read-only backup... {pct}%"
+                        ))
+            if len(data) != total:
+                raise IOError(f"Backup length is {len(data)}, expected {total}")
+            digest = hashlib.sha256(data).hexdigest()
+            with open(self.output_path, "wb") as target:
+                target.write(data)
+                target.flush()
+                os.fsync(target.fileno())
+            self.completed.emit(True, (
+                f"完整 Flash 备份完成（128 KiB）。\\nSHA-256：{digest}\\n未发送任何写入指令。"
+                if self.zh else
+                f"Full flash backup complete (128 KiB).\\nSHA-256: {digest}\\nNo write command was sent."
+            ))
+        except Exception as e:
+            self.completed.emit(False, (
+                f"备份失败：{e}" if self.zh else f"Backup failed: {e}"
+            ))
+
+
 class FlashWorker(QThread):
     progress = Signal(int, str)
     finished = Signal(bool, str)
@@ -224,6 +275,7 @@ class MainWindow(QMainWindow):
         self.device_ok = False
         self.busy = False
         self.worker = None
+        self.backup_worker = None
         self.boot_ver = None
 
         self.resize(820, 760)
@@ -352,11 +404,15 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.device_lbl)
 
         btn_row = QHBoxLayout()
+        self.backup_btn = QPushButton()
+        self.backup_btn.setEnabled(False)
+        self.backup_btn.clicked.connect(self.on_backup)
         self.write_btn = QPushButton()
         self.write_btn.setEnabled(False)
         self.write_btn.clicked.connect(self.on_write)
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
+        btn_row.addWidget(self.backup_btn)
         btn_row.addWidget(self.write_btn)
         btn_row.addWidget(self.bar)
         lay.addLayout(btn_row)
@@ -514,6 +570,7 @@ class MainWindow(QMainWindow):
         )
         for h, txt in zip(self.col_heads, heads):
             h.setText(txt)
+        self.backup_btn.setText(self._t("Read-only full backup", "完整 Flash 只读备份"))
         self.write_btn.setText(self._t("Write firmware", "写入固件"))
         self._refresh_status_text()
 
@@ -579,6 +636,7 @@ class MainWindow(QMainWindow):
         self.device_ok = False
         self.boot_ver = None
         self.write_btn.setEnabled(False)
+        self.backup_btn.setEnabled(False)
         if path is None:
             self._refresh_status_text()
             return
@@ -588,9 +646,52 @@ class MainWindow(QMainWindow):
             self.device_ok = True
             self._refresh_status_text()
             self.write_btn.setEnabled(True)
+            self.backup_btn.setEnabled(True)
         except Exception as e:
             self.device_lbl.setText(self._t("Adapter: Not responding", "转接环：无响应"))
             self.status_lbl.setText(self._t(f"No answer ({e})", f"转接环没有响应（{e}）"))
+
+    def on_backup(self):
+        if not self.device_ok or not self.seen_path or self.busy:
+            return
+        default_name = "ea9-full-flash-backup.bin"
+        output_path, _ = QFileDialog.getSaveFileName(
+            self, self._t("Save full flash backup", "保存完整 Flash 备份"),
+            os.path.join(os.path.expanduser("~"), default_name),
+            "Binary files (*.bin);;All files (*)",
+        )
+        if not output_path:
+            return
+        prompt = self._t(
+            "This operation only reads the adapter's 128 KiB flash. It does not erase or write firmware. Continue?",
+            "此操作只读取转接环的 128 KiB Flash，不擦除、不写入固件。确认开始备份？"
+        )
+        if QMessageBox.question(
+            self, self.windowTitle(), prompt,
+            QMessageBox.Ok | QMessageBox.Cancel
+        ) != QMessageBox.Ok:
+            return
+
+        self.busy = True
+        self.backup_btn.setEnabled(False)
+        self.write_btn.setEnabled(False)
+        self.bar.setValue(0)
+        self.backup_worker = BackupWorker(self.seen_path, output_path, self.zh)
+        self.backup_worker.progress.connect(
+            lambda p, msg: (self.bar.setValue(p), self.status_lbl.setText(msg))
+        )
+        self.backup_worker.completed.connect(self.on_backup_done)
+        self.backup_worker.start()
+
+    def on_backup_done(self, ok, msg):
+        self.busy = False
+        self.status_lbl.setText(msg)
+        if ok:
+            self.bar.setValue(100)
+            QMessageBox.information(self, self.windowTitle(), msg)
+        else:
+            QMessageBox.critical(self, self.windowTitle(), msg)
+        self.poll_usb()
 
     def _collect_slots(self):
         hw = int(self.hw_combo.currentText())
